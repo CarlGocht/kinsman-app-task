@@ -5,6 +5,7 @@ describe('settings', () => {
   it('provides immutable defaults and exposes a generated seed', () => {
     const settings = createSettings();
     expect(settings.sampleIntervalMs).toBe(1000);
+    expect(settings.movementSpeedMetersPerSecond).toBe(20);
     expect(settings.accuracyMeters).toBe(0.02);
     expect(Number.isInteger(settings.seed)).toBe(true);
     expect(Object.isFrozen(settings)).toBe(true);

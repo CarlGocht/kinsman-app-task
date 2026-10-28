@@ -78,7 +78,7 @@ describe('stationary simulator', () => {
     vi.advanceTimersByTime(501);
     expect(samples).toHaveLength(5);
     for (const sample of samples) {
-      expect(sample.velocityData).toEqual({ speedMetersPerSecond: 5, headingDegrees: 90 });
+      expect(sample.velocityData).toEqual({ speedMetersPerSecond: 20, headingDegrees: 90 });
       expect(sample.longitude).toBeGreaterThan(settings.longitude);
     }
     expect(samples[4].longitude).toBeGreaterThan(samples[0].longitude);

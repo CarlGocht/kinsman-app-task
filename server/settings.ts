@@ -8,7 +8,7 @@ export function createSettings(overrides: Partial<SensorSettings> = {}): Readonl
     sampleIntervalMs: 1000, sampleJitterMs: 10, sendDelayMaxMs: 5,
     positionRadiusMeters: 0.01, accuracyMeters: 0.02, accuracyJitterMeters: 0.005,
     speedMaxMetersPerSecond: 0.005, headingJitterDegrees: 2,
-    movementSpeedMetersPerSecond: 5, movementTimeoutMs: 1000,
+    movementSpeedMetersPerSecond: 20, movementTimeoutMs: 1000,
     ...overrides,
   };
   if (typeof settings.sensorId !== 'string' || !settings.sensorId.trim()) throw new Error('sensorId must be nonempty');

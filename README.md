@@ -164,7 +164,7 @@ WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement
 
 ### Movement API and map controls
 
-Click the map or Tab to focus it, then hold arrow keys: up is north, right is east, down is south, and left is west. Combinations move diagonally at the same total speed. Opposing keys cancel. Leaflet arrow-key panning is disabled; dragging and zoom controls still work. Commands refresh every 200 ms while held and stop on key release, map/window focus loss, tab hiding, or client unmount. The server stops after the command timeout if refreshes cease. When overriding the timeout, keep it comfortably above the 200 ms refresh interval.
+Click the map or Tab to focus it, then hold arrow keys: up is north, right is east, down is south, and left is west. Movement defaults to 20 m/s, giving approximately 20 meters between raw samples at the default one-second interval. Combinations move diagonally at the same total speed. Opposing keys cancel. Leaflet arrow-key panning is disabled; dragging and zoom controls still work. Commands refresh every 200 ms while held and stop on key release, map/window focus loss, tab hiding, or client unmount. The server stops after the command timeout if refreshes cease. When overriding the timeout, keep it comfortably above the 200 ms refresh interval.
 
 - **`POST /api/movement`** accepts JSON `{ "north": 1, "east": 0 }`. Both components must be finite numbers in `[-1, 1]`; the server normalizes nonzero vectors and uses the configured movement speed. `{ "north": 0, "east": 0 }` stops immediately.
 - **`GET /api/movement`** returns current ground-truth motion and position. POST returns the same state after applying the command: `latitude`, `longitude`, normalized `north`/`east`, `speedMetersPerSecond`, `headingDegrees`, and remaining `expiresInMs`.
@@ -197,7 +197,7 @@ SAMPLE_INTERVAL_MS=250 SEED=42 npm run dev
 | `ACCURACY_JITTER_METERS` | `0.005` |
 | `SPEED_MAX_METERS_PER_SECOND` | `0.005` |
 | `HEADING_JITTER_DEGREES` | `2` |
-| `MOVEMENT_SPEED_METERS_PER_SECOND` | `5` |
+| `MOVEMENT_SPEED_METERS_PER_SECOND` | `20` |
 | `MOVEMENT_TIMEOUT_MS` | `1000` |
 
 Invalid configuration fails at startup with an error. Timing settings must leave at least one millisecond between samples and keep the maximum send delay below the minimum sample interval. Accuracy must remain positive. The local coordinate approximation supports base latitudes strictly between -89 and 89 degrees and position radii up to 1000 meters; longitudes wrap at the date line. Heading jitter is limited to 180 degrees. Movement speed must be greater than zero and no more than 100 m/s; command timeout must be between 250 and 10000 ms. Reproducing a seed reproduces noise and requested delays, but real clock timestamps and UUIDs differ between runs.
