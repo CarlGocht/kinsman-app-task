@@ -1,3 +1,6 @@
+import { applyJson } from './httpJson.js';
+import { settingsPatchError } from '../shared/settingsControls.js';
+import type { SettingsPatch } from '../shared/settingsControls.js';
 import { createServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { MovementCommand, ServerMessage, SensorSettings } from '../shared/protocol.js';
@@ -5,10 +8,10 @@ import { createSettings } from './settings.js';
 import { Simulator } from './simulator.js';
 
 export function createApp(input: Partial<SensorSettings> = {}) {
-  const settings = createSettings(input);
+  let settings = createSettings(input);
   const server = createServer((request, response) => {
     response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Content-Type', 'application/json');
@@ -18,33 +21,25 @@ export function createApp(input: Partial<SensorSettings> = {}) {
       if (request.method !== 'POST') {
         response.writeHead(405, { Allow: 'GET, POST' }); response.end(JSON.stringify({ error: 'Method not allowed' })); return;
       }
-      if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
-        response.writeHead(415); response.end(JSON.stringify({ error: 'Expected application/json' })); return;
-      }
-      let body = '';
-      let oversized = false;
-      request.on('data', (chunk: Buffer) => {
-        if (oversized) return;
-        body += chunk.toString();
-        if (Buffer.byteLength(body) > 1024) {
-          oversized = true;
-          response.writeHead(413); response.end(JSON.stringify({ error: 'Body too large' }));
-        }
-      });
-      request.on('end', () => {
-        if (oversized) return;
-        try { response.end(JSON.stringify(simulator.setMovement(JSON.parse(body) as MovementCommand))); }
-        catch (error) { response.writeHead(400); response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid movement' })); }
-      });
+      applyJson(request, response, (body) => simulator.setMovement(body as MovementCommand));
       return;
     }
     if (request.url === '/api/settings') {
-      if (request.method !== 'GET') {
-        response.writeHead(405, { Allow: 'GET' });
-        response.end(JSON.stringify({ error: 'Method not allowed' }));
+      if (request.method === 'GET') { response.end(JSON.stringify(settings)); return; }
+      if (request.method === 'PATCH') {
+        applyJson(request, response, (body) => {
+          const error = settingsPatchError(body, settings);
+          if (error) throw new Error(error);
+          const next = createSettings({ ...settings, ...body as SettingsPatch });
+          simulator.updateSettings(next);
+          settings = next;
+          broadcast({ type: 'settings', data: settings });
+          return settings;
+        });
         return;
       }
-      response.end(JSON.stringify(settings));
+      response.writeHead(405, { Allow: 'GET, PATCH' });
+      response.end(JSON.stringify({ error: 'Method not allowed' }));
       return;
     }
     response.writeHead(404);
@@ -67,12 +62,13 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     client.on('close', status);
     status();
     broadcast({ type: 'motion', data: simulator.getMovement() });
+    client.send(JSON.stringify({ type: 'settings', data: settings } satisfies ServerMessage));
   });
   const simulator = new Simulator(settings, (data) => broadcast({ type: 'measurement', data }));
   let motionTimer: ReturnType<typeof setInterval> | undefined;
   let closing: Promise<void> | undefined;
   return {
-    settings,
+    get settings() { return settings; },
     async listen(port = 3001) {
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject);

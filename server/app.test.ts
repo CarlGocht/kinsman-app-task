@@ -77,12 +77,12 @@ describe('local API', () => {
     const url = `http://127.0.0.1:${port}/api/movement`;
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ north: 1, east: 0 }) });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ north: 1, east: 0, speedMetersPerSecond: 5, headingDegrees: 0 });
+    expect(await response.json()).toMatchObject({ north: 1, east: 0, speedMetersPerSecond: 20, headingDegrees: 0 });
     const samples = await waitForMeasurements(client, 3);
     for (const sample of samples) {
       expect(sample.latitude).toBeGreaterThan(app.settings.latitude);
-      expect(sample.velocityData.speedMetersPerSecond).toBeGreaterThanOrEqual(4.995);
-      expect(sample.velocityData.speedMetersPerSecond).toBeLessThanOrEqual(5.005);
+      expect(sample.velocityData.speedMetersPerSecond).toBeGreaterThanOrEqual(19.995);
+      expect(sample.velocityData.speedMetersPerSecond).toBeLessThanOrEqual(20.005);
       expect(sample.velocityData.headingDegrees <= 2 || sample.velocityData.headingDegrees >= 358).toBe(true);
     }
     expect(samples[2].latitude).toBeGreaterThan(samples[0].latitude);
@@ -112,7 +112,7 @@ describe('local API', () => {
     const motion = messages.filter((m) => m.type === 'motion');
     expect(motion).toHaveLength(4);
     expect(motion[3].data.longitude).toBeGreaterThan(motion[0].data.longitude);
-    expect(motion[0].data).toMatchObject({ speedMetersPerSecond: 5, headingDegrees: 90 });
+    expect(motion[0].data).toMatchObject({ speedMetersPerSecond: 20, headingDegrees: 90 });
     expect(messages.some((m) => m.type === 'measurement')).toBe(false);
   });
   it('rejects malformed movement commands and supports preflight', async () => {
@@ -126,6 +126,42 @@ describe('local API', () => {
     expect((await fetch(url, { method: 'DELETE' })).status).toBe(405);
     expect((await fetch(url, { method: 'OPTIONS' })).status).toBe(204);
     expect(await (await fetch(url)).json()).toMatchObject({ speedMetersPerSecond: 0 });
+  });
+  it('atomically patches settings, synchronizes clients, and changes real samples', async () => {
+    const { app, port } = await setup();
+    const first = await connect(port), second = await connect(port);
+    const [before] = await waitForMeasurements(first.client, 1);
+    const url = `http://127.0.0.1:${port}/api/settings`;
+    const patch = { historyWindowSeconds: 5, sampleIntervalMs: 80, positionRadiusMeters: 0, accuracyMeters: 0.5, accuracyJitterMeters: 0, speedMaxMetersPerSecond: 0, headingJitterDegrees: 0 };
+    const response = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    expect(response.status).toBe(200);
+    const next = await response.json();
+    expect(next).toMatchObject(patch);
+    expect(await (await fetch(url)).json()).toEqual(next);
+    expect(app.settings).toEqual(next);
+    const samples = await waitForMeasurements(first.client, 3);
+    expect(samples[0].sequentialId).toBeGreaterThan(before.sequentialId);
+    expect(samples.at(-1)).toMatchObject({ latitude: app.settings.latitude, accuracyMeters: 0.5, velocityData: { speedMetersPerSecond: 0, headingDegrees: 0 } });
+    expect(Date.parse(samples[2].timeAtSample) - Date.parse(samples[1].timeAtSample)).toBeGreaterThanOrEqual(79);
+    for (const peer of [first, second]) expect(peer.messages).toContainEqual({ type: 'settings', data: next });
+    expect((await fetch(url, { method: 'OPTIONS' })).headers.get('Access-Control-Allow-Methods')).toContain('PATCH');
+  });
+  it('rejects invalid settings patches without modifying configuration or broadcasting changes', async () => {
+    const { app, port } = await setup();
+    const peer = await connect(port);
+    await waitForMeasurements(peer.client, 1);
+    const original = app.settings;
+    const url = `http://127.0.0.1:${port}/api/settings`;
+    for (const patch of [null, [], {}, { seed: 10 }, { latitude: 0 }, { sampleIntervalMs: 0 }, { sampleIntervalMs: '100' }, { sampleIntervalMs: 20, sendDelayMaxMs: 20 }, { accuracyJitterMeters: 0.1 }, { headingJitterDegrees: 181 }, { historyWindowSeconds: 0.4 }, { historyWindowSeconds: 31 }, { unknown: 1 }]) {
+      const response = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+      expect(response.status).toBe(400);
+      expect(app.settings).toBe(original);
+    }
+    expect((await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: 'broken' })).status).toBe(400);
+    expect((await fetch(url, { method: 'PATCH', body: '{}' })).status).toBe(415);
+    expect((await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(1025) })).status).toBe(413);
+    expect(peer.messages.filter((message) => message.type === 'settings')).toEqual([{ type: 'settings', data: original }]);
+    expect(await (await fetch(url)).json()).toEqual(original);
   });
   it('rejects WebSocket upgrades outside /ws', async () => {
     const { port } = await setup();

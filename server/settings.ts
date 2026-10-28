@@ -1,3 +1,4 @@
+import { HISTORY_WINDOW_LIMITS } from '../shared/settingsControls.js';
 import { randomInt } from 'node:crypto';
 import type { SensorSettings } from '../shared/protocol.js';
 
@@ -5,16 +6,18 @@ export function createSettings(overrides: Partial<SensorSettings> = {}): Readonl
   const settings: SensorSettings = {
     sensorId: 'sensor-1', seed: randomInt(0, 2 ** 32),
     latitude: 43.61811797437582, longitude: -72.20972127777227,
+    historyWindowSeconds: HISTORY_WINDOW_LIMITS.default,
     sampleIntervalMs: 1000, sampleJitterMs: 10, sendDelayMaxMs: 5,
     positionRadiusMeters: 0.01, accuracyMeters: 0.02, accuracyJitterMeters: 0.005,
     speedMaxMetersPerSecond: 0.005, headingJitterDegrees: 2,
-    movementSpeedMetersPerSecond: 5, movementTimeoutMs: 1000,
+    movementSpeedMetersPerSecond: 20, movementTimeoutMs: 1000,
     ...overrides,
   };
   if (typeof settings.sensorId !== 'string' || !settings.sensorId.trim()) throw new Error('sensorId must be nonempty');
   for (const [key, value] of Object.entries(settings)) {
     if (key !== 'sensorId' && (typeof value !== 'number' || !Number.isFinite(value))) throw new Error(`${key} must be finite`);
   }
+  if (settings.historyWindowSeconds < HISTORY_WINDOW_LIMITS.min || settings.historyWindowSeconds > HISTORY_WINDOW_LIMITS.max) throw new Error('History weighting window must be between 0.5 and 30 seconds');
   if (!Number.isInteger(settings.seed) || settings.seed < 0 || settings.seed >= 2 ** 32) throw new Error('seed must be a uint32');
   if (Math.abs(settings.latitude) >= 89 || Math.abs(settings.longitude) > 180) throw new Error('Coordinates must have latitude between -89 and 89 and longitude between -180 and 180');
   for (const key of ['sampleJitterMs', 'sendDelayMaxMs', 'positionRadiusMeters', 'accuracyJitterMeters', 'speedMaxMetersPerSecond', 'headingJitterDegrees'] as const) {
@@ -30,6 +33,7 @@ export function createSettings(overrides: Partial<SensorSettings> = {}): Readonl
 export function settingsFromEnv(env: NodeJS.ProcessEnv): Readonly<SensorSettings> {
   const overrides: Partial<SensorSettings> = {};
   const names: Record<Exclude<keyof SensorSettings, 'sensorId'>, string> = {
+    historyWindowSeconds: 'HISTORY_WINDOW_SECONDS',
     movementSpeedMetersPerSecond: 'MOVEMENT_SPEED_METERS_PER_SECOND', movementTimeoutMs: 'MOVEMENT_TIMEOUT_MS',
     seed: 'SEED', latitude: 'LATITUDE', longitude: 'LONGITUDE', sampleIntervalMs: 'SAMPLE_INTERVAL_MS',
     sampleJitterMs: 'SAMPLE_JITTER_MS', sendDelayMaxMs: 'SEND_DELAY_MAX_MS', positionRadiusMeters: 'POSITION_RADIUS_METERS',

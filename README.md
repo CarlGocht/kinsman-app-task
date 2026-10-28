@@ -34,13 +34,13 @@ Use React and TypeScript to display connection status, current coordinates, velo
 - **Central configuration:** define `sampleIntervalMs` with a default of `1000` (one sample per second), plus `sensorId`, the fixed base coordinates, nominal `accuracyMeters`, a random seed, and the jitter limits below. Allow startup configuration overrides so changing the interval does not require editing the sampling loop. Validate settings before starting.
 - **Client settings display:** fetch settings on connection and reconnection, and provide a refresh action to retrieve the current values. The sampling loop and settings endpoint must use the same configuration source.
 
-Settings are read-only through the API initially; runtime editing can be added later. Expose the effective random seed and all jitter settings through the settings endpoint for debugging.
+Sampling and noise settings can be changed at runtime through `PATCH /api/settings`. Effective values, including the seed, remain available through `GET /api/settings` and are pushed to connected clients in `settings` WebSocket messages. Identity, seed, base coordinates, and movement speed/timeout remain startup-only settings.
 
 ## Simulation and randomness
 
 Start stationary at one configurable base location. Movement commands update the server-owned ground truth using elapsed monotonic time, independently of sampling frequency. Add small, bounded noise around that current position so measurement noise never accumulates into drift.
 
-Use a seeded pseudorandom generator for simulation noise. Generate a seed at startup unless one is supplied, and expose it in settings so a run can be reproduced. Keep UUID generation separate. With the same seed, configuration, movement command timing, and controlled clock, tests should reproduce the same measurements and schedule.
+Use a seeded pseudorandom generator for simulation noise. Generate a seed at startup unless one is supplied, and expose it in settings so a run can be reproduced. Keep UUID generation separate. With the same seed, configuration, movement/settings command timing, and controlled clock, tests should reproduce the same measurements and schedule.
 
 Initial defaults (configurable):
 
@@ -56,7 +56,7 @@ Initial defaults (configurable):
 
 Record `timeAtSample` and `timeAtSend` from the actual clock at measurement generation and transmission. Timing jitter comes from scheduling, rather than altering timestamps; send time must not precede sample time. Operating-system scheduling may add extra delay beyond the configured jitter.
 
-Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Larger noise and faults remain future work.
+Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Noise levels can be adjusted at runtime; explicit fault injection and detection remain future work.
 
 ## Server tests
 
@@ -160,11 +160,11 @@ sensor.onmessage = (event) => console.log(JSON.parse(event.data));
 // sensor.close();
 ```
 
-WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }`, `{ type: "motion", data: movementState }`, or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Motion snapshots are simulation ground truth for visualization, not sensor measurements; they do not consume sample IDs or add to raw history. Status messages are sent on connection and disconnection. Settings are read-only; movement controls are described below. The API supports cross-origin local browser requests, including JSON preflight requests.
+WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }`, `{ type: "motion", data: movementState }`, `{ type: "settings", data: settings }`, or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Motion snapshots are simulation ground truth for visualization, not sensor measurements; they do not consume sample IDs or add to raw history. Status messages are sent on connection and disconnection. Live settings and movement controls are described below. The API supports cross-origin local browser requests, including JSON preflight requests.
 
 ### Movement API and map controls
 
-Click the map or Tab to focus it, then hold arrow keys: up is north, right is east, down is south, and left is west. Combinations move diagonally at the same total speed. Opposing keys cancel. Leaflet arrow-key panning is disabled; dragging and zoom controls still work. Commands refresh every 200 ms while held and stop on key release, map/window focus loss, tab hiding, or client unmount. The server stops after the command timeout if refreshes cease. When overriding the timeout, keep it comfortably above the 200 ms refresh interval.
+Click the map or Tab to focus it, then hold arrow keys: up is north, right is east, down is south, and left is west. Movement defaults to 20 m/s, giving approximately 20 meters between raw samples at the default one-second interval. Combinations move diagonally at the same total speed. Opposing keys cancel. Leaflet arrow-key panning is disabled; dragging and zoom controls still work. Commands refresh every 200 ms while held and stop on key release, map/window focus loss, tab hiding, or client unmount. The server stops after the command timeout if refreshes cease. When overriding the timeout, keep it comfortably above the 200 ms refresh interval.
 
 - **`POST /api/movement`** accepts JSON `{ "north": 1, "east": 0 }`. Both components must be finite numbers in `[-1, 1]`; the server normalizes nonzero vectors and uses the configured movement speed. `{ "north": 0, "east": 0 }` stops immediately.
 - **`GET /api/movement`** returns current ground-truth motion and position. POST returns the same state after applying the command: `latitude`, `longitude`, normalized `north`/`east`, `speedMetersPerSecond`, `headingDegrees`, and remaining `expiresInMs`.
@@ -172,7 +172,7 @@ Click the map or Tab to focus it, then hold arrow keys: up is north, right is ea
 
 There is one shared sensor: the latest accepted command from any client wins. Movement is integrated up to each command, sample, or state read; command expiry is honored even if it falls between samples. Releasing a key stops ground truth immediately, while the next scheduled measurement reports the change. Very short movements between samples may only appear as displacement in the next sample.
 
-The taller map separates the green live avatar from blue raw sensor points. The avatar and its travel-direction arrow follow server ground truth independently of the sensor sample interval, rendered with `requestAnimationFrame` and projected between 20 Hz motion snapshots. Projection is capped at the command lease, and the avatar is removed while disconnected. The raw points and chronological line update only on sensor measurements; history is limited to the current connection's last 50 samples and is cleared on reconnect. Manual panning/zooming is preserved; use **Center on sensor** to return to the current location.
+The taller map separates the green live avatar from blue raw sensor points. The avatar and its travel-direction arrow follow server ground truth independently of the sensor sample interval, rendered with `requestAnimationFrame` and projected between 20 Hz motion snapshots. Projection is capped at the command lease, and the avatar is removed while disconnected. Raw and saved weighted points update only on sensor measurements; history is limited to the current connection's last 50 pairs and is cleared on reconnect. Manual panning/zooming is preserved; use **Center on sensor** to return to the current location.
 
 ### Startup configuration
 
@@ -186,6 +186,7 @@ SAMPLE_INTERVAL_MS=250 SEED=42 npm run dev
 | --- | --- |
 | `PORT` | `3001` (`0` chooses an available port) |
 | `SENSOR_ID` | `sensor-1` |
+| `HISTORY_WINDOW_SECONDS` | `3` |
 | `SEED` | Random unsigned 32-bit integer |
 | `LATITUDE` | `43.61811797437582` |
 | `LONGITUDE` | `-72.20972127777227` |
@@ -197,7 +198,7 @@ SAMPLE_INTERVAL_MS=250 SEED=42 npm run dev
 | `ACCURACY_JITTER_METERS` | `0.005` |
 | `SPEED_MAX_METERS_PER_SECOND` | `0.005` |
 | `HEADING_JITTER_DEGREES` | `2` |
-| `MOVEMENT_SPEED_METERS_PER_SECOND` | `5` |
+| `MOVEMENT_SPEED_METERS_PER_SECOND` | `20` |
 | `MOVEMENT_TIMEOUT_MS` | `1000` |
 
 Invalid configuration fails at startup with an error. Timing settings must leave at least one millisecond between samples and keep the maximum send delay below the minimum sample interval. Accuracy must remain positive. The local coordinate approximation supports base latitudes strictly between -89 and 89 degrees and position radii up to 1000 meters; longitudes wrap at the date line. Heading jitter is limited to 180 degrees. Movement speed must be greater than zero and no more than 100 m/s; command timeout must be between 250 and 10000 ms. Reproducing a seed reproduces noise and requested delays, but real clock timestamps and UUIDs differ between runs.
@@ -223,3 +224,59 @@ Keep secrets in local environment files, which are ignored by Git.
 ## Velocity interpretation
 
 The server always reports numeric raw speed and heading. Stationary speed retains small noise; stationary heading retains the last direction (initially north) with jitter and has no meaningful travel interpretation. The live avatar arrow uses simulation movement direction and disappears when ground truth stops; the raw payload and table continue showing noisy sensor readings unchanged. A future model may derive speed and heading noise from east/north velocity components.
+
+## Client weighted position
+
+The comparison table stores each raw reading with a snapshot of its **Weighted** position calculated when that reading arrived. Each raw row is immediately followed by its orange weighted row. Historical estimates are never recomputed when newer or late readings arrive. It uses every distinct measurement in the configured history window of `timeAtSample` (three seconds by default) from the current connection, using whatever is available while warming up. The window is `(newest sample timestamp - configured window, newest sample timestamp]`, so a point exactly at the lower boundary is excluded. It is anchored to the greatest sample timestamp seen, not arrival order, send time, or the browser clock. Late arrivals within that window contribute; older arrivals are ignored without moving the window backward. Duplicate unique IDs count once. Invalid sample timestamps are ignored. The source sequence IDs and normalized weight percentages are shown with the window end timestamp. Reconnection resets the window along with raw history. A separate time-pruned buffer retains all samples in the window even when the rate exceeds the 50-row raw display limit. The table shows the contributing sample count and up to eight source IDs/percentages. The window remains at the last known sample time if the stream pauses; it does not imply freshness relative to wall-clock time.
+
+Weights combine inverse-square reported accuracy with gentle recency decay: `w = 2^(-ageMs / 3000) / accuracyMeters²`, normalized to sum to one. Age is measured from the newest sample timestamp in the window. At equal age, 1 cm accuracy has four times the influence of 2 cm accuracy; at equal accuracy, a reading one second older has about 79% as much influence. The three-second half-life is defined in `client/weightedPosition.ts`. The client averages local latitude/longitude offsets, handling longitude wrap at the date line. This is a local position smoother; it does not extrapolate old positions forward during motion. The map displays both histories: blue points/solid line for raw readings and orange points/dashed line for saved weighted estimates, with tooltips naming the corresponding raw sample ID. It retains the latest 50 pairs per connection; the live green ground-truth avatar remains separate. A late raw reading is paired with the current event-time estimate at its arrival, so the weighted window end can be newer than that raw reading’s sample timestamp.
+
+The weighted row's **model accuracy** is `sqrt(sum(alpha_i² * accuracyMeters_i²))`, where alpha is each normalized accuracy/recency weight. It assumes independent errors about the same true position and treats reported accuracy as an uncertainty scale. The simulator does not guarantee that statistical model, and movement can introduce lag, so this value is not a guarantee of actual accuracy. Speed and heading are not fused and are shown as dashes in the weighted row. Invalid/nonpositive accuracies or invalid coordinates within the window make the estimate unavailable rather than producing invalid arithmetic.
+
+## Estimated accuracy band
+
+Each saved reading pair also contains a diagnostic accuracy band for its raw reading. The client shows the radius and comparison details above the map, stores the radius in the raw table row, and draws a purple circle around that raw location using the real radius in meters. Centimeter bands may be subpixel at street-map zoom. When the real band projects to less than 12 pixels, a separate dashed 12-pixel visibility indicator is shown; its tooltip and legend explicitly say it is not to scale. The real meter radius and saved numeric values remain unchanged. The visibility indicator updates with zoom and disappears when the real band is large enough. It is an estimated uncertainty radius, not a calibrated confidence interval or a probability that the reading is correct.
+
+The comparison uses only strictly earlier samples within the configured history window of the raw sample time. It excludes the reading itself, future/same-time samples, and repeated IDs. Prior positions are projected to the new reading's sample time using their raw speed and heading, then averaged with the same accuracy/recency weighting. It uses prior raw samples as evidence rather than repeatedly counting correlated saved weighted estimates. No simulator ground truth or avatar data enters the calculation.
+
+The radius is `max(reported accuracy, historical disagreement + projected-history RMS spread + history model accuracy)`. Disagreement is the distance from the current raw position to the history prediction; spread measures agreement among projected historical positions. With no usable history, it starts at sensor-reported accuracy and is labeled **Sensor only**. It cannot shrink below that reported accuracy. Abrupt turns, noisy velocity, or inconsistent positions may widen it; this is diagnostic feedback, not fault classification. Every historical pair keeps the band computed at its arrival, and disconnected views label the last reading accordingly.
+
+## Saved next-reading predictions
+
+The client fits an accuracy/recency-weighted constant-velocity trajectory to the configured history window of raw positions in local east/north coordinates. It needs at least two distinct sample times and loaded interval settings. Unlike the weighted smoothing point, the fitted position is evaluated at the newest sample time before projecting forward by `sampleIntervalMs`. Reported velocity is a cross-check for uncertainty; simulator ground truth, keyboard commands, and avatar motion are never prediction inputs.
+
+Each immutable forecast stores its creation time, source measurement IDs, fitted base position/time, velocity, target sample time, predicted coordinates, and heuristic radius. The base radius is twice the sum of weighted reported accuracy and fit RMS residual. Radius includes an allowance for configured sample timing jitter (`fitted speed × jitter seconds`), linear velocity uncertainty, and quadratic future acceleration uncertainty (`0.5 × 2 m/s² × horizon²`). Velocity uncertainty combines reported/fitted velocity disagreement, residual/span, reported-position-derived slope uncertainty, and a motion floor combining 5% speed uncertainty (at least 0.05 m/s) with a 2° heading allowance. These assumptions are declared in `PREDICTION_ASSUMPTIONS`; the summary displays their stored contributions. An exact straight-line fit no longer eliminates uncertainty about what happens next. At 20 m/s with a one-second forecast and 10 ms timing jitter, even a perfect fit has a radius of roughly 2.5 m rather than centimeters. These are initial diagnostic heuristics, not a calibrated probability. Starts, stops, and turns can miss a constant-velocity prediction.
+
+On receiving a raw reading, the client first searches **previously saved** forecasts for the nearest matching target time, then scores that frozen model at the actual `timeAtSample`. The match tolerance is the maximum of 50 ms, configured sampling jitter plus 50 ms, and 25% of the interval. Scoring never changes the fit or uncertainty using the arriving coordinates, accuracy, or velocity. Only afterward does the new reading enter the history and produce a forecast for the following reading. Late arrivals can match an original unscored forecast; duplicate readings cannot score it again. An out-of-order arrival does not create a replacement forecast at an older base time.
+
+A teal map point and dashed real-scale circle display the next saved forecast. A summary shows its target, radius, creation time, source IDs, and latest result. The saved prediction table retains 50 forecasts/evaluations in memory per connection (20 displayed), with error, evaluated radius, and inside/outside status. Unmatched targets remain awaiting a matching reading rather than being classified as faults. Forecasts and evaluations reset on reconnect along with reading history; page reload does not persist them. The live avatar and raw/weighted trails retain their existing behavior.
+
+The map legend uses color/shape swatches with toggle buttons for the live avatar, raw readings, weighted readings, accuracy band, and prediction area. Buttons expose their state with `aria-pressed` and can be used with the keyboard. Hiding a layer preserves streaming, computations, and history; it stays hidden across new ticks and can be restored without resetting the map. Layer choices last until the client is reloaded.
+
+## Live sensor controls
+
+The **Sensor controls** panel offers sliders and exact numeric inputs for history lookback, sample interval, joint latitude/longitude position jitter radius, reported accuracy baseline, accuracy jitter, speed noise, heading jitter, sample timing jitter, and maximum send delay. Move controls to stage a draft, then click **Apply settings** to update the running simulator without restarting. **Discard edits** restores current server values. No changes to arrow-key movement or its instantaneous turning behavior are included.
+
+`PATCH /api/settings` accepts a partial JSON object containing only adjustable fields and returns the full effective settings. It validates and commits the entire patch atomically; invalid requests leave settings unchanged. Successful changes broadcast `{ type: "settings", data: settings }` to all connected clients, and new clients receive the current snapshot. The UI updates prediction timing immediately for subsequent forecasts, protects newer WebSocket settings from stale fetch responses, and preserves unsaved edits to other controls when another client changes settings. Already saved predictions remain frozen.
+
+| Runtime setting | Allowed range |
+| --- | --- |
+| `historyWindowSeconds` | 0.5–30 seconds |
+| `sampleIntervalMs` | 20–10000 ms |
+| `positionRadiusMeters` | 0–100 m |
+| `accuracyMeters` | 0.001–100 m |
+| `accuracyJitterMeters` | 0–100 m, strictly less than `accuracyMeters` |
+| `speedMaxMetersPerSecond` | 0–20 m/s |
+| `headingJitterDegrees` | 0–180° |
+| `sampleJitterMs` | 0–1000 ms |
+| `sendDelayMaxMs` | 0–1000 ms |
+
+The minimum interval (`sampleIntervalMs - sampleJitterMs`) must be at least 1 ms and exceed the maximum send delay. Timing jitter affects actual scheduling; timestamps continue reflecting real sample/send times. IDs are not adjustable. Both position coordinates use a shared disk radius, with longitude scaled for latitude.
+
+Applying timing settings restarts the sampling countdown while preserving motion, the random-generator state, and sequence IDs. Any already-generated delayed reading is delivered before the faster cadence begins, preserving send order. That in-flight reading retains its original noise values. A cadence change can leave prior forecasts without a matching target time; their saved models are not rewritten. Changes are shared across clients, remain in server memory, and revert to startup configuration on restart. Runtime limits are deliberately narrower than some startup limits and are shared by API and form validation in `shared/settingsControls.ts`.
+
+### Adjustable history window
+
+**History weighting window** in Sensor controls sets the lookback from 0.5 to 30 seconds (default 3). Apply it like the other settings; it syncs across clients and affects weighting, historical accuracy comparison, and trajectory fits on subsequent readings. Each weighted snapshot and forecast records its actual window length, so historical labels remain correct after changes. Existing saved estimates, bands, forecasts, and evaluations are not rewritten.
+
+The client retains up to 30 seconds of raw sample-time data independently of the selected lookback and 50 displayed pairs. Increasing the window can immediately draw on that retained data at the next reading; data from before connection cannot be recovered. Shrinking it excludes older points from new estimates while keeping the retention buffer available for later expansion. The gentle recency half-life remains 3 seconds, independently of lookback length. Changing only history or noise settings preserves sampling cadence; timing controls reschedule it. `HISTORY_WINDOW_SECONDS` sets the startup default.

@@ -4,6 +4,7 @@ export interface SensorSettings {
   latitude: number;
   longitude: number;
   sampleIntervalMs: number;
+  historyWindowSeconds: number;
   sampleJitterMs: number;
   sendDelayMaxMs: number;
   positionRadiusMeters: number;
@@ -30,6 +31,7 @@ export interface Measurement {
 export type ServerMessage =
   | { type: 'measurement'; data: Measurement }
   | { type: 'motion'; data: MovementState }
+  | { type: 'settings'; data: SensorSettings }
   | { type: 'status'; data: { simulation: 'running'; connectedClients: number } };
 
 export interface MovementCommand { north: number; east: number }

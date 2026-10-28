@@ -78,7 +78,7 @@ describe('stationary simulator', () => {
     vi.advanceTimersByTime(501);
     expect(samples).toHaveLength(5);
     for (const sample of samples) {
-      expect(sample.velocityData).toEqual({ speedMetersPerSecond: 5, headingDegrees: 90 });
+      expect(sample.velocityData).toEqual({ speedMetersPerSecond: 20, headingDegrees: 90 });
       expect(sample.longitude).toBeGreaterThan(settings.longitude);
     }
     expect(samples[4].longitude).toBeGreaterThan(samples[0].longitude);
@@ -95,5 +95,57 @@ describe('stationary simulator', () => {
     vi.advanceTimersByTime(100);
     expect(emit).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('live simulator settings', () => {
+  it('reschedules one sampling loop and applies new noise settings without resetting motion or IDs', () => {
+    vi.useFakeTimers();
+    const samples: Measurement[] = [];
+    const initial = createSettings({ seed: 42, sampleIntervalMs: 1000, sampleJitterMs: 0, sendDelayMaxMs: 0 });
+    const simulator = new Simulator(initial, (sample) => samples.push(sample));
+    simulator.start(); simulator.setMovement({ north: 0, east: 1 });
+    vi.advanceTimersByTime(500);
+    simulator.updateSettings(createSettings({ ...initial, sampleIntervalMs: 100, positionRadiusMeters: 0, accuracyMeters: 0.5, accuracyJitterMeters: 0, speedMaxMetersPerSecond: 0, headingJitterDegrees: 0 }));
+    vi.advanceTimersByTime(301);
+    expect(samples).toHaveLength(3);
+    expect(samples.map((sample) => sample.sequentialId)).toEqual([1, 2, 3]);
+    for (const sample of samples) {
+      expect(sample.accuracyMeters).toBe(0.5);
+      expect(sample.velocityData).toEqual({ speedMetersPerSecond: 20, headingDegrees: 90 });
+      expect(sample.longitude).toBeGreaterThan(initial.longitude);
+    }
+    simulator.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('finishes an old delayed send before starting a faster cadence', () => {
+    vi.useFakeTimers();
+    const samples: Measurement[] = [];
+    const initial = createSettings({ seed: 42, sampleIntervalMs: 1000, sampleJitterMs: 0, sendDelayMaxMs: 900 });
+    const simulator = new Simulator(initial, (sample) => samples.push(sample));
+    simulator.start(); vi.advanceTimersByTime(1000);
+    expect(samples).toHaveLength(0);
+    simulator.updateSettings(createSettings({ ...initial, sampleIntervalMs: 20, sendDelayMaxMs: 0 }));
+    vi.advanceTimersByTime(1000);
+    expect(samples.length).toBeGreaterThan(1);
+    expect(samples[0].sequentialId).toBe(1);
+    expect(Date.parse(samples[1].timeAtSample)).toBeGreaterThan(Date.parse(samples[0].timeAtSend));
+    expect(samples.map((sample) => sample.sequentialId)).toEqual(samples.map((_, index) => index + 1));
+    simulator.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('history-only settings updates', () => {
+  it('preserves sampling cadence when only the client history window changes', () => {
+    vi.useFakeTimers();
+    const samples: Measurement[] = [];
+    const settings = createSettings({ seed: 42, sampleJitterMs: 0, sendDelayMaxMs: 0 });
+    const simulator = new Simulator(settings, (sample) => samples.push(sample));
+    simulator.start(); vi.advanceTimersByTime(500);
+    simulator.updateSettings(createSettings({ ...settings, historyWindowSeconds: 10 }));
+    vi.advanceTimersByTime(501);
+    expect(samples).toHaveLength(1);
+    simulator.stop();
   });
 });
