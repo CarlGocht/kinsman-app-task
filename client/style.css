@@ -248,7 +248,9 @@ pre {
 .avatar-dot { position: absolute; left: 12px; top: 12px; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; background: #176c57; box-shadow: 0 1px 3px #19323855; }
 .avatar-arrow { position: absolute; left: 8px; top: -7px; width: 24px; text-align: center; font-size: 23px; color: #124f40; text-shadow: 0 0 3px white; line-height: 24px; }
 
-.weighted-row, .weighted-row th { background: #e5f1e9; color: #245d45; }
-.weighted-row td, .weighted-row th { border-bottom: 2px solid #b5d4c1; }
-.weighted-row:hover { background: #dcece1; }
+.weighted-row, .weighted-row th { background: #fff1e3; color: #8a4814; }
+.weighted-row td, .weighted-row th { border-bottom: 2px solid #ebc29c; }
+.weighted-row:hover { background: #ffead5; }
 tbody th { font-weight: 500; background: transparent; }
+
+.raw-row th { color: #326e9f; }

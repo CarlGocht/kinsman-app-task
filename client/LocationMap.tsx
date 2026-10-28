@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { avatarPosition } from './avatar';
 import type { MotionSnapshot } from './avatar';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMapMovement } from './useMapMovement';
-import type { Measurement } from '../shared/protocol';
+import type { ReadingPair } from './readingHistory';
 
 interface LocationMapProps {
-  history: Measurement[];
+  pairs: ReadingPair[];
   motion: MotionSnapshot | null;
   connected: boolean;
 }
 
-export function LocationMap({ history, connected, motion }: LocationMapProps) {
+export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
+  const history = useMemo(() => pairs.map((pair) => pair.raw), [pairs]);
   const measurement = history[0];
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -60,7 +61,7 @@ export function LocationMap({ history, connected, motion }: LocationMapProps) {
       marker.current.setLatLng(point);
     }
     trail.current?.clearLayers();
-    const chronological = [...history].reverse();
+    const chronological = [...history].sort((a, b) => Date.parse(a.timeAtSample) - Date.parse(b.timeAtSample));
     L.polyline(chronological.map((sample) => [sample.latitude, sample.longitude] as L.LatLngTuple), {
       color: '#4b83b3', weight: 2, opacity: 0.55, interactive: false,
     }).addTo(trail.current!);
@@ -71,9 +72,22 @@ export function LocationMap({ history, connected, motion }: LocationMapProps) {
         radius: 3, color: '#497da8', weight: 1, fillOpacity: 0.65,
       }).bindTooltip(label).addTo(trail.current!);
     }
+    const weighted = [...pairs].reverse().flatMap((pair) => pair.weighted ? [{ raw: pair.raw, estimate: pair.weighted }] : []);
+    L.polyline(weighted.map(({ estimate }) => [estimate.latitude, estimate.longitude] as L.LatLngTuple), {
+      color: '#dc781c', weight: 2, opacity: 0.75, dashArray: '5 4', interactive: false,
+    }).addTo(trail.current!);
+    for (const { raw, estimate } of weighted) {
+      const label = document.createElement('span');
+      label.textContent = `Weighted paired with raw #${raw.sequentialId} · window end ${estimate.timeAtSample} · ${estimate.sources.length} samples · ${estimate.latitude}, ${estimate.longitude}`;
+      L.circleMarker([estimate.latitude, estimate.longitude], {
+        radius: raw.uniqueId === measurement.uniqueId ? 7 : 4,
+        color: '#dc781c', weight: 2, fillColor: '#f6a24c', fillOpacity: 0.35,
+        className: 'weighted-map-point',
+      }).bindTooltip(label).addTo(trail.current!);
+    }
     marker.current.bringToFront();
 
-  }, [measurement, history]);
+  }, [measurement, history, pairs]);
 
   useEffect(() => {
     if (!connected) return;
@@ -130,6 +144,6 @@ export function LocationMap({ history, connected, motion }: LocationMapProps) {
     {controls.error && <p className="notice" role="alert">{controls.error}</p>}
     <p id="map-controls" className="map-instructions">Click the map or Tab to focus it, then hold ↑ ↓ ← → to move. Release to stop. {controls.moving ? 'Movement command active.' : 'Arrow keys move the sensor, not the map.'}</p>
     <div ref={container} tabIndex={0} className="location-map" role="region" aria-label="OpenStreetMap showing the sensor location" aria-describedby="map-controls" />
-    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and line: the last 50 raw sensor samples, added only on sensor ticks. Drag to pan; use + / − to zoom.</p>
+    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Drag to pan; use + / − to zoom.</p>
   </section>;
 }

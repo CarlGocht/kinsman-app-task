@@ -1,6 +1,6 @@
-import { positionWindow } from './weightedPosition';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Measurement, MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
+import { appendReading, emptyReadingHistory } from './readingHistory';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
 
 export function useSensor() {
   const [motion, setMotion] = useState<{ state: MovementState; receivedAt: number } | null>(null);
@@ -9,8 +9,8 @@ export function useSensor() {
   const [settingsError, setSettingsError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [estimationHistory, setEstimationHistory] = useState<Measurement[]>([]);
-  const [history, setHistory] = useState<Measurement[]>([]);
+  const [readings, setReadings] = useState(emptyReadingHistory);
+  const history = useMemo(() => readings.pairs.map((pair) => pair.raw), [readings.pairs]);
   const [clients, setClients] = useState<number | null>(null);
   const [streamError, setStreamError] = useState('');
   const request = useRef<AbortController | null>(null);
@@ -48,8 +48,7 @@ export function useSensor() {
         setConnection('Connected');
         setStreamError('');
         setMotion(null);
-        setEstimationHistory([]);
-        setHistory([]); // A server restart can reset sequence IDs; start a fresh connection history.
+        setReadings(emptyReadingHistory()); // A server restart can reset sequence IDs; start a fresh connection history.
         void refresh();
       };
       socket.onmessage = (event) => {
@@ -58,8 +57,7 @@ export function useSensor() {
           const message = JSON.parse(event.data) as ServerMessage;
           if (message.type === 'motion') setMotion({ state: message.data, receivedAt: performance.now() });
           if (message.type === 'measurement') {
-            setHistory((previous) => [message.data, ...previous].slice(0, 50));
-            setEstimationHistory((previous) => positionWindow([message.data, ...previous]));
+            setReadings((previous) => appendReading(previous, message.data));
           }
           if (message.type === 'status') setClients(message.data.connectedClients);
         } catch {
@@ -84,5 +82,5 @@ export function useSensor() {
     };
   }, [refresh]);
 
-  return { estimationHistory, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }

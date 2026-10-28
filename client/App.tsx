@@ -1,5 +1,4 @@
-import { useMemo } from 'react';
-import { weightedPosition } from './weightedPosition';
+import { Fragment } from 'react';
 import { useSensor } from './useSensor';
 import { LocationMap } from './LocationMap';
 
@@ -14,7 +13,7 @@ const labels: Record<string, string> = {
 export function App() {
   const sensor = useSensor();
   const latest = sensor.history[0];
-  const weighted = useMemo(() => weightedPosition(sensor.estimationHistory), [sensor.estimationHistory]);
+  const weighted = sensor.pairs[0]?.weighted ?? null;
   return <main>
     <header>
       <div><p className="eyebrow">KINSMAN / LOCAL SIMULATOR</p><h1>Sensor monitor</h1><p className="subtitle">One simulated sensor. A live view of every measurement.</p></div>
@@ -26,7 +25,7 @@ export function App() {
       <section><p className="label">REPORTED ACCURACY</p><strong>{latest ? `${(latest.accuracyMeters * 100).toFixed(2)} cm` : '—'}</strong><small>Centimeter-scale measurement</small></section>
       <section><p className="label">REPORTED SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Reported speed with measurement jitter</small></section>
     </div>
-    <LocationMap motion={sensor.motion} history={sensor.history} connected={sensor.connection === 'Connected'} />
+    <LocationMap motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
     <div className="columns">
       <section className="panel">
         <div className="panel-head"><div><p className="eyebrow">CONFIGURATION</p><h2>Current settings</h2></div><button onClick={() => void sensor.refresh()} disabled={sensor.refreshing}>{sensor.refreshing ? 'Refreshing…' : 'Refresh settings'}</button></div>
@@ -41,8 +40,8 @@ export function App() {
       </section>
     </div>
     <section className="panel history">
-      <div className="panel-head"><div><p className="eyebrow">LIVE STREAM</p><h2>Recent measurements</h2></div><span className="tag">{sensor.history.length} / 50</span></div>
-      <p className="footnote">Newest first. The highlighted row estimates location from the latest three seconds of sample timestamps (smaller accuracyMeters means higher weight). Raw readings remain unchanged. The window ends at the newest sample time received; older out-of-order arrivals do not move it backward.</p>
+      <div className="panel-head"><div><p className="eyebrow">LIVE STREAM</p><h2>Recent measurements</h2></div><span className="tag">{sensor.pairs.length} / 50 pairs</span></div>
+      <p className="footnote">Newest first. Each raw reading is paired with its saved weighted estimate from the latest three seconds of sample timestamps (smaller accuracyMeters means higher weight). Raw readings remain unchanged. The window ends at the newest sample time received; older out-of-order arrivals do not move it backward.</p>
       {weighted && <p className="footnote" aria-label="Weighted position sources">
         Window: 3 seconds · {weighted.sources.length} samples · {weighted.sources.slice(0, 8).map((source) => `#${source.sequentialId}: ${(source.weight * 100).toFixed(1)}%`).join(' · ')}{weighted.sources.length > 8 ? ` · +${weighted.sources.length - 8} more` : ''}.
         {' '}Weighted accuracy uses an independent, same-position error model; it is not guaranteed actual accuracy. While moving, the estimate can lag behind the latest raw position.
@@ -50,14 +49,16 @@ export function App() {
       {sensor.history.length ? <div className="table-scroll"><table>
         <thead><tr><th>Source</th><th>Sequence / window</th><th>Sample / window end (UTC)</th><th>Latitude (°)</th><th>Longitude (°)</th><th>Accuracy (m)</th><th>Speed (m/s)</th><th>Heading (°)</th></tr></thead>
         <tbody>
-          {weighted && <tr className="weighted-row" aria-label="Current weighted position">
-            <th scope="row">Weighted (3 s, {weighted.sources.length} samples)</th>
-            <td>{weighted.sources.slice(0, 8).map((source) => `#${source.sequentialId}`).join(', ') + (weighted.sources.length > 8 ? `, +${weighted.sources.length - 8} more` : '')}</td>
-            <td>{weighted.timeAtSample}</td><td>{weighted.latitude.toFixed(9)}</td><td>{weighted.longitude.toFixed(9)}</td>
-            <td title="Model-based combined accuracy; assumes independent errors at one position">{weighted.accuracyMeters.toFixed(4)} (model)</td>
-            <td>—</td><td>—</td>
-          </tr>}
-          {sensor.history.map((m) => <tr key={m.uniqueId}><th scope="row">Raw</th><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>)}
+          {sensor.pairs.map(({ raw: m, weighted: estimate }, index) => <Fragment key={m.uniqueId}>
+            <tr className="raw-row" aria-label={`Raw measurement #${m.sequentialId}`}><th scope="row">Raw</th><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>
+            <tr className="weighted-row" aria-label={index === 0 ? 'Current weighted position' : `Weighted position paired with raw #${m.sequentialId}`}>
+              <th scope="row">Weighted (3 s, {estimate?.sources.length ?? 0} samples)</th>
+              <td>Pair #{m.sequentialId}</td>
+              {estimate ? <><td>{estimate.timeAtSample}</td><td>{estimate.latitude.toFixed(9)}</td><td>{estimate.longitude.toFixed(9)}</td>
+                <td title="Model-based combined accuracy; assumes independent errors at one position">{estimate.accuracyMeters.toFixed(4)} (model)</td><td>—</td><td>—</td></>
+                : <td colSpan={6}>Estimate unavailable</td>}
+            </tr>
+          </Fragment>)}
         </tbody>
       </table></div> : <p className="empty">Measurements will appear here once the server starts streaming.</p>}
     </section>
