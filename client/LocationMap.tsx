@@ -4,6 +4,7 @@ import type { MotionSnapshot } from './avatar';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useMapMovement } from './useMapMovement';
+import { destination } from '../shared/geo';
 import type { ReadingPair } from './readingHistory';
 
 interface LocationMapProps {
@@ -62,11 +63,27 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
     }
     trail.current?.clearLayers();
     const band = pairs[0]?.band;
+    let removeVisibilityRing = () => {};
     if (band) {
       L.circle(point, {
         radius: band.radiusMeters, color: '#8063a5', fillColor: '#a994c4',
         fillOpacity: 0.14, weight: 2, className: 'accuracy-map-band',
       }).bindTooltip(`Estimated accuracy band: ${band.radiusMeters.toFixed(3)} m radius (not a calibrated confidence interval)`).addTo(trail.current!);
+      const visibilityRing = L.circleMarker(point, {
+        radius: 12, color: '#8063a5', fillOpacity: 0, weight: 2, dashArray: '3 3',
+        className: 'accuracy-visibility-ring',
+      }).bindTooltip(`Visibility indicator (minimum 12 pixels, not to scale). Actual estimated band radius: ${band.radiusMeters.toFixed(3)} m.`);
+      const updateVisibility = () => {
+        const edge = destination(measurement.latitude, measurement.longitude, 0, band.radiusMeters);
+        const centerPixel = instance.project(L.latLng(measurement.latitude, measurement.longitude));
+        const edgePixel = instance.project(L.latLng(edge.latitude, edge.longitude));
+        if (centerPixel.distanceTo(edgePixel) < 12) visibilityRing.addTo(trail.current!);
+        else visibilityRing.remove();
+        visibilityRing.bringToFront();
+      };
+      updateVisibility();
+      instance.on('zoomend', updateVisibility);
+      removeVisibilityRing = () => instance.off('zoomend', updateVisibility);
     }
     const chronological = [...history].sort((a, b) => Date.parse(a.timeAtSample) - Date.parse(b.timeAtSample));
     L.polyline(chronological.map((sample) => [sample.latitude, sample.longitude] as L.LatLngTuple), {
@@ -93,7 +110,7 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
       }).bindTooltip(label).addTo(trail.current!);
     }
     marker.current.bringToFront();
-
+    return removeVisibilityRing;
   }, [measurement, history, pairs]);
 
   useEffect(() => {
@@ -151,6 +168,6 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
     {controls.error && <p className="notice" role="alert">{controls.error}</p>}
     <p id="map-controls" className="map-instructions">Click the map or Tab to focus it, then hold ↑ ↓ ← → to move. Release to stop. {controls.moving ? 'Movement command active.' : 'Arrow keys move the sensor, not the map.'}</p>
     <div ref={container} tabIndex={0} className="location-map" role="region" aria-label="OpenStreetMap showing the sensor location" aria-describedby="map-controls" />
-    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Purple circle: latest raw reading’s estimated accuracy band (true meter scale; centimeter bands can be too small to see). Drag to pan; use + / − to zoom.</p>
+    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Purple circle: estimated accuracy band at true meter scale. When it is too small to see, a dashed 12-pixel ring marks it for visibility only; use the numeric radius for its actual size. Drag to pan; use + / − to zoom.</p>
   </section>;
 }

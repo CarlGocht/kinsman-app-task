@@ -29,7 +29,7 @@ export function App() {
     {band && <section className="panel accuracy-summary" aria-label="Current accuracy band">
       <div className="panel-head"><div><p className="eyebrow">ACCURACY ESTIMATE · RAW #{latest.sequentialId}</p><h2>Estimated band radius: {band.radiusMeters.toFixed(3)} m</h2></div><span className="tag">{band.comparedSamples ? `${band.comparedSamples} prior samples` : 'Sensor only'}</span></div>
       <p className="footnote">Reported accuracy: {band.reportedAccuracyMeters.toFixed(3)} m · History disagreement: {band.disagreementMeters === null ? 'collecting history' : `${band.disagreementMeters.toFixed(3)} m`} · History spread: {band.historySpreadMeters === null ? '—' : `${band.historySpreadMeters.toFixed(3)} m`}</p>
-      <p className="footnote">Purple map band combines sensor accuracy with motion-adjusted historical agreement. An estimated uncertainty radius, not a guaranteed confidence percentage.{sensor.connection !== 'Connected' ? ' Last received reading; disconnected.' : ''}</p>
+      <p className="footnote">Purple map band combines sensor accuracy with motion-adjusted historical agreement. A dashed ring keeps small bands visible and is not to scale. An estimated uncertainty radius, not a guaranteed confidence percentage.{sensor.connection !== 'Connected' ? ' Last received reading; disconnected.' : ''}</p>
     </section>}
     <LocationMap motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
     <div className="columns">
