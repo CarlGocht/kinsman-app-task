@@ -4,7 +4,7 @@ import type { SensorSettings } from '../shared/protocol.js';
 export function createSettings(overrides: Partial<SensorSettings> = {}): Readonly<SensorSettings> {
   const settings: SensorSettings = {
     sensorId: 'sensor-1', seed: randomInt(0, 2 ** 32),
-    latitude: 40.7128, longitude: -74.006,
+    latitude: 43.61811797437582, longitude: -72.20972127777227,
     sampleIntervalMs: 1000, sampleJitterMs: 10, sendDelayMaxMs: 5,
     positionRadiusMeters: 0.01, accuracyMeters: 0.02, accuracyJitterMeters: 0.005,
     speedMaxMetersPerSecond: 0.005, headingJitterDegrees: 2,

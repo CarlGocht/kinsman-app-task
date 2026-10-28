@@ -173,8 +173,8 @@ SAMPLE_INTERVAL_MS=250 SEED=42 npm run dev
 | `PORT` | `3001` (`0` chooses an available port) |
 | `SENSOR_ID` | `sensor-1` |
 | `SEED` | Random unsigned 32-bit integer |
-| `LATITUDE` | `40.7128` |
-| `LONGITUDE` | `-74.006` |
+| `LATITUDE` | `43.61811797437582` |
+| `LONGITUDE` | `-72.20972127777227` |
 | `SAMPLE_INTERVAL_MS` | `1000` |
 | `SAMPLE_JITTER_MS` | `10` |
 | `SEND_DELAY_MAX_MS` | `5` |
