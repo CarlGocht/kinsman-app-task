@@ -8,6 +8,7 @@ export function createSettings(overrides: Partial<SensorSettings> = {}): Readonl
     sampleIntervalMs: 1000, sampleJitterMs: 10, sendDelayMaxMs: 5,
     positionRadiusMeters: 0.01, accuracyMeters: 0.02, accuracyJitterMeters: 0.005,
     speedMaxMetersPerSecond: 0.005, headingJitterDegrees: 2,
+    movementSpeedMetersPerSecond: 5, movementTimeoutMs: 1000,
     ...overrides,
   };
   if (typeof settings.sensorId !== 'string' || !settings.sensorId.trim()) throw new Error('sensorId must be nonempty');
@@ -21,6 +22,7 @@ export function createSettings(overrides: Partial<SensorSettings> = {}): Readonl
   }
   if (settings.sampleIntervalMs - settings.sampleJitterMs < 1 || settings.sampleIntervalMs + settings.sampleJitterMs > 2 ** 31 - 1 || settings.sendDelayMaxMs >= settings.sampleIntervalMs - settings.sampleJitterMs) throw new Error('Timing settings must allow positive, non-overlapping sampling cycles');
   if (settings.accuracyMeters <= settings.accuracyJitterMeters) throw new Error('Accuracy must stay positive');
+  if (settings.movementSpeedMetersPerSecond <= 0 || settings.movementSpeedMetersPerSecond > 100 || settings.movementTimeoutMs < 250 || settings.movementTimeoutMs > 10000) throw new Error('Movement speed must be in (0, 100] m/s and timeout in [250, 10000] ms');
   if (settings.headingJitterDegrees > 180 || settings.positionRadiusMeters > 1000) throw new Error('Heading jitter must be <=180 degrees and position radius <=1000 meters');
   return Object.freeze(settings);
 }
@@ -28,6 +30,7 @@ export function createSettings(overrides: Partial<SensorSettings> = {}): Readonl
 export function settingsFromEnv(env: NodeJS.ProcessEnv): Readonly<SensorSettings> {
   const overrides: Partial<SensorSettings> = {};
   const names: Record<Exclude<keyof SensorSettings, 'sensorId'>, string> = {
+    movementSpeedMetersPerSecond: 'MOVEMENT_SPEED_METERS_PER_SECOND', movementTimeoutMs: 'MOVEMENT_TIMEOUT_MS',
     seed: 'SEED', latitude: 'LATITUDE', longitude: 'LONGITUDE', sampleIntervalMs: 'SAMPLE_INTERVAL_MS',
     sampleJitterMs: 'SAMPLE_JITTER_MS', sendDelayMaxMs: 'SEND_DELAY_MAX_MS', positionRadiusMeters: 'POSITION_RADIUS_METERS',
     accuracyMeters: 'ACCURACY_METERS', accuracyJitterMeters: 'ACCURACY_JITTER_METERS', speedMaxMetersPerSecond: 'SPEED_MAX_METERS_PER_SECOND', headingJitterDegrees: 'HEADING_JITTER_DEGREES',

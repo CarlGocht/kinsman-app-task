@@ -19,6 +19,7 @@ describe('settings', () => {
     { accuracyMeters: 0.005 }, { accuracyJitterMeters: -1 }, { latitude: 90 },
     { longitude: 181 }, { seed: 1.5 }, { seed: -1 }, { seed: 2 ** 32 },
     { sensorId: '' }, { speedMaxMetersPerSecond: -1 }, { headingJitterDegrees: 181 },
+    { movementSpeedMetersPerSecond: 0 }, { movementSpeedMetersPerSecond: 101 }, { movementTimeoutMs: 249 }, { movementTimeoutMs: 10001 },
     { positionRadiusMeters: -1 }, { sendDelayMaxMs: -1 }, { sampleIntervalMs: 2 ** 31 },
   ])('rejects invalid settings %j', (overrides) => {
     expect(() => createSettings(overrides)).toThrow();

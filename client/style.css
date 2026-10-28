@@ -227,7 +227,7 @@ pre {
   margin-bottom: 22px;
 }
 .location-map {
-  height: 360px;
+  height: 520px;
   width: 100%;
   border-radius: 7px;
   border: 1px solid #dce3dd;
@@ -238,5 +238,10 @@ pre {
   font-size: 11px;
 }
 @media (max-width: 520px) {
-  .location-map { height: 300px; }
+  .location-map { height: 440px; }
 }
+
+.location-map:focus-visible { outline: 3px solid #348656; outline-offset: 3px; }
+.map-instructions { font-size: 13px; line-height: 1.6; color: #35594d; }
+.travel-icon { background: transparent; border: none; }
+.travel-arrow { width: 40px; height: 40px; text-align: center; line-height: 12px; font-size: 23px; color: #124f40; text-shadow: 0 0 3px white; transform-origin: center; }

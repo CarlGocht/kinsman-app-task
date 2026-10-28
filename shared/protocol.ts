@@ -11,6 +11,8 @@ export interface SensorSettings {
   accuracyJitterMeters: number;
   speedMaxMetersPerSecond: number;
   headingJitterDegrees: number;
+  movementSpeedMetersPerSecond: number;
+  movementTimeoutMs: number;
 }
 
 export interface Measurement {
@@ -28,3 +30,12 @@ export interface Measurement {
 export type ServerMessage =
   | { type: 'measurement'; data: Measurement }
   | { type: 'status'; data: { simulation: 'running'; connectedClients: number } };
+
+export interface MovementCommand { north: number; east: number }
+export interface MovementState extends MovementCommand {
+  latitude: number;
+  longitude: number;
+  speedMetersPerSecond: number;
+  headingDegrees: number;
+  expiresInMs: number;
+}

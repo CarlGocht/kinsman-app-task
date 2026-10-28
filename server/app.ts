@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { ServerMessage, SensorSettings } from '../shared/protocol.js';
+import type { MovementCommand, ServerMessage, SensorSettings } from '../shared/protocol.js';
 import { createSettings } from './settings.js';
 import { Simulator } from './simulator.js';
 
@@ -8,8 +8,36 @@ export function createApp(input: Partial<SensorSettings> = {}) {
   const settings = createSettings(input);
   const server = createServer((request, response) => {
     response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Content-Type', 'application/json');
+    if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
+    if (request.url === '/api/movement') {
+      if (request.method === 'GET') { response.end(JSON.stringify(simulator.getMovement())); return; }
+      if (request.method !== 'POST') {
+        response.writeHead(405, { Allow: 'GET, POST' }); response.end(JSON.stringify({ error: 'Method not allowed' })); return;
+      }
+      if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+        response.writeHead(415); response.end(JSON.stringify({ error: 'Expected application/json' })); return;
+      }
+      let body = '';
+      let oversized = false;
+      request.on('data', (chunk: Buffer) => {
+        if (oversized) return;
+        body += chunk.toString();
+        if (Buffer.byteLength(body) > 1024) {
+          oversized = true;
+          response.writeHead(413); response.end(JSON.stringify({ error: 'Body too large' }));
+        }
+      });
+      request.on('end', () => {
+        if (oversized) return;
+        try { response.end(JSON.stringify(simulator.setMovement(JSON.parse(body) as MovementCommand))); }
+        catch (error) { response.writeHead(400); response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Invalid movement' })); }
+      });
+      return;
+    }
     if (request.url === '/api/settings') {
       if (request.method !== 'GET') {
         response.writeHead(405, { Allow: 'GET' });
@@ -32,6 +60,7 @@ export function createApp(input: Partial<SensorSettings> = {}) {
       client.send(payload, (error) => { if (error) client.terminate(); });
     }
   }
+  sockets.on('error', (error) => { console.error('WebSocket server error:', error.message); });
   const status = () => broadcast({ type: 'status', data: { simulation: 'running', connectedClients: sockets.clients.size } });
   sockets.on('connection', (client) => {
     client.on('error', () => client.terminate());
