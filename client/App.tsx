@@ -4,6 +4,7 @@ import { useSensor } from './useSensor';
 import { LocationMap } from './LocationMap';
 
 const labels: Record<string, string> = {
+  historyWindowSeconds: 'History weighting window (s)',
   sensorId: 'Sensor ID', seed: 'Random seed', latitude: 'Base latitude (°)', longitude: 'Base longitude (°)',
   sampleIntervalMs: 'Sample interval (ms)', sampleJitterMs: 'Sample jitter (±ms)', sendDelayMaxMs: 'Max send delay (ms)',
   positionRadiusMeters: 'Position radius (m)', accuracyMeters: 'Nominal accuracy (m)', accuracyJitterMeters: 'Accuracy jitter (±m)',
@@ -39,8 +40,8 @@ export function App() {
     <section className="panel prediction-summary" aria-label="Next reading prediction">
       <div className="panel-head"><div><p className="eyebrow">NEXT SENSOR READING</p><h2>{forecast ? `Predicted area: ${forecast.radiusMeters.toFixed(3)} m radius` : 'Collecting prediction history'}</h2></div><span className="tag">Constant velocity</span></div>
       {forecast ? <><p className="footnote">Target: {forecast.targetTime} · {forecast.latitude.toFixed(9)}°, {forecast.longitude.toFixed(9)}°</p>
-        <p className="footnote">Saved {forecast.createdAt} using {forecast.sourceIds.length} readings: {forecast.sourceSequenceIds.slice(0, 8).map((id) => `#${id}`).join(', ')}{forecast.sourceIds.length > 8 ? '…' : ''}.</p>
-        <p className="footnote">Motion uncertainty: {forecast.radiusGrowthMetersPerSecond.toFixed(3)} m/s · acceleration allowance: {forecast.accelerationUncertaintyMetersPerSecondSquared.toFixed(1)} m/s² · timing allowance: {forecast.timingUncertaintyMeters.toFixed(3)} m. A straight recent path does not guarantee unchanged future motion.</p></> : <p className="footnote">Needs at least two distinct sample times in the three-second window and loaded server settings.</p>}
+        <p className="footnote">Saved {forecast.createdAt} · {forecast.historyWindowMs / 1000} s history · using {forecast.sourceIds.length} readings: {forecast.sourceSequenceIds.slice(0, 8).map((id) => `#${id}`).join(', ')}{forecast.sourceIds.length > 8 ? '…' : ''}.</p>
+        <p className="footnote">Motion uncertainty: {forecast.radiusGrowthMetersPerSecond.toFixed(3)} m/s · acceleration allowance: {forecast.accelerationUncertaintyMetersPerSecondSquared.toFixed(1)} m/s² · timing allowance: {forecast.timingUncertaintyMeters.toFixed(3)} m. A straight recent path does not guarantee unchanged future motion.</p></> : <p className="footnote">Needs at least two distinct sample times in the configured history window and loaded server settings.</p>}
       {latestEvaluation && <p className="prediction-result">Last result: #{latestEvaluation.actualSequentialId} was {latestEvaluation.insideArea ? 'inside' : 'outside'} its saved area · error {latestEvaluation.errorMeters.toFixed(3)} m / radius {latestEvaluation.radiusMeters.toFixed(3)} m.</p>}
       <p className="footnote">Teal point and area: saved forecast before the reading arrives. Area is heuristic, not a calibrated probability; turns and stops can cause misses. {sensor.connection !== 'Connected' ? 'Disconnected: showing last saved forecast.' : ''}</p>
     </section>
@@ -60,9 +61,9 @@ export function App() {
     </div>
     <section className="panel history">
       <div className="panel-head"><div><p className="eyebrow">LIVE STREAM</p><h2>Recent measurements</h2></div><span className="tag">{sensor.pairs.length} / 50 pairs</span></div>
-      <p className="footnote">Newest first. Each raw reading is paired with its saved weighted estimate from the latest three seconds of sample timestamps (smaller accuracyMeters and newer sample times mean higher weight). Raw readings remain unchanged. The window ends at the newest sample time received; older out-of-order arrivals do not move it backward.</p>
+      <p className="footnote">Newest first. Each raw reading is paired with its saved weighted estimate from the configured window of sample timestamps (smaller accuracyMeters and newer sample times mean higher weight). Raw readings remain unchanged. The window ends at the newest sample time received; older out-of-order arrivals do not move it backward.</p>
       {weighted && <p className="footnote" aria-label="Weighted position sources">
-        Window: 3 seconds · {weighted.sources.length} samples · {weighted.sources.slice(0, 8).map((source) => `#${source.sequentialId}: ${(source.weight * 100).toFixed(1)}%`).join(' · ')}{weighted.sources.length > 8 ? ` · +${weighted.sources.length - 8} more` : ''}.
+        Window: {weighted.windowMs / 1000} seconds · {weighted.sources.length} samples · {weighted.sources.slice(0, 8).map((source) => `#${source.sequentialId}: ${(source.weight * 100).toFixed(1)}%`).join(' · ')}{weighted.sources.length > 8 ? ` · +${weighted.sources.length - 8} more` : ''}.
         {' '}Weighted accuracy uses an independent, same-position error model; it is not guaranteed actual accuracy. While moving, the estimate can lag behind the latest raw position.
       </p>}
       {sensor.history.length ? <div className="table-scroll"><table>
@@ -71,7 +72,7 @@ export function App() {
           {sensor.pairs.map(({ raw: m, weighted: estimate, band: savedBand }, index) => <Fragment key={m.uniqueId}>
             <tr className="raw-row" aria-label={`Raw measurement #${m.sequentialId}`}><th scope="row">Raw</th><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{savedBand ? savedBand.radiusMeters.toFixed(3) : '—'}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>
             <tr className="weighted-row" aria-label={index === 0 ? 'Current weighted position' : `Weighted position paired with raw #${m.sequentialId}`}>
-              <th scope="row">Weighted (3 s, {estimate?.sources.length ?? 0} samples)</th>
+              <th scope="row">Weighted ({estimate ? estimate.windowMs / 1000 : '—'} s, {estimate?.sources.length ?? 0} samples)</th>
               <td>Pair #{m.sequentialId}</td>
               {estimate ? <><td>{estimate.timeAtSample}</td><td>{estimate.latitude.toFixed(9)}</td><td>{estimate.longitude.toFixed(9)}</td>
                 <td title="Model-based combined accuracy; assumes independent errors at one position">{estimate.accuracyMeters.toFixed(4)} (model)</td><td>—</td><td>—</td><td>—</td></>

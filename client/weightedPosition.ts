@@ -1,6 +1,7 @@
 import type { Measurement } from '../shared/protocol.js';
 
 export interface WeightedPosition {
+  windowMs: number;
   latitude: number;
   longitude: number;
   accuracyMeters: number;
@@ -11,15 +12,16 @@ export interface WeightedPosition {
 export const POSITION_WINDOW_MS = 3000;
 export const RECENCY_HALF_LIFE_MS = 3000;
 
-// Event-time window: (newest sample time - 3 seconds, newest sample time].
+// Event-time window: (newest sample time - configured lookback, newest sample time].
 // Arrival order and display-history limits do not determine the estimate.
-export function positionWindow(history: readonly Measurement[]): Measurement[] {
+export function positionWindow(history: readonly Measurement[], windowMs = POSITION_WINDOW_MS): Measurement[] {
+  if (!Number.isFinite(windowMs) || windowMs <= 0) return [];
   const timestamped = history.map((sample) => ({ sample, time: Date.parse(sample.timeAtSample) }))
     .filter(({ time }) => Number.isFinite(time));
   if (!timestamped.length) return [];
   const end = timestamped.reduce((latest, { time }) => Math.max(latest, time), -Infinity);
   const seen = new Set<string>();
-  return timestamped.filter(({ time }) => time > end - POSITION_WINDOW_MS)
+  return timestamped.filter(({ time }) => time > end - windowMs)
     .sort((a, b) => b.time - a.time || b.sample.sequentialId - a.sample.sequentialId || a.sample.uniqueId.localeCompare(b.sample.uniqueId))
     .filter(({ sample }) => {
       if (seen.has(sample.uniqueId)) return false;
@@ -28,9 +30,9 @@ export function positionWindow(history: readonly Measurement[]): Measurement[] {
     }).map(({ sample }) => sample);
 }
 
-// Uses every distinct measurement in the latest three seconds of sample time.
-export function weightedPosition(history: readonly Measurement[]): WeightedPosition | null {
-  const samples = positionWindow(history);
+// Uses every distinct measurement in the configured sample-time lookback.
+export function weightedPosition(history: readonly Measurement[], windowMs = POSITION_WINDOW_MS): WeightedPosition | null {
+  const samples = positionWindow(history, windowMs);
   if (!samples.length) return null;
   if (samples.some((sample) => !Number.isFinite(sample.accuracyMeters) || sample.accuracyMeters <= 0
     || !Number.isFinite(sample.latitude) || Math.abs(sample.latitude) > 90
@@ -57,6 +59,7 @@ export function weightedPosition(history: readonly Measurement[]): WeightedPosit
   if (longitude > 180) longitude -= 360;
   if (longitude < -180) longitude += 360;
   return {
+    windowMs,
     latitude: anchor.latitude + latitudeOffset,
     longitude,
     // Nominal combined uncertainty only under independent, same-position errors.

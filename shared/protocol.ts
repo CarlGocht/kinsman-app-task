@@ -4,6 +4,7 @@ export interface SensorSettings {
   latitude: number;
   longitude: number;
   sampleIntervalMs: number;
+  historyWindowSeconds: number;
   sampleJitterMs: number;
   sendDelayMaxMs: number;
   positionRadiusMeters: number;

@@ -135,3 +135,17 @@ describe('live simulator settings', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe('history-only settings updates', () => {
+  it('preserves sampling cadence when only the client history window changes', () => {
+    vi.useFakeTimers();
+    const samples: Measurement[] = [];
+    const settings = createSettings({ seed: 42, sampleJitterMs: 0, sendDelayMaxMs: 0 });
+    const simulator = new Simulator(settings, (sample) => samples.push(sample));
+    simulator.start(); vi.advanceTimersByTime(500);
+    simulator.updateSettings(createSettings({ ...settings, historyWindowSeconds: 10 }));
+    vi.advanceTimersByTime(501);
+    expect(samples).toHaveLength(1);
+    simulator.stop();
+  });
+});

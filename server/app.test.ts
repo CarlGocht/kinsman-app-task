@@ -132,7 +132,7 @@ describe('local API', () => {
     const first = await connect(port), second = await connect(port);
     const [before] = await waitForMeasurements(first.client, 1);
     const url = `http://127.0.0.1:${port}/api/settings`;
-    const patch = { sampleIntervalMs: 80, positionRadiusMeters: 0, accuracyMeters: 0.5, accuracyJitterMeters: 0, speedMaxMetersPerSecond: 0, headingJitterDegrees: 0 };
+    const patch = { historyWindowSeconds: 5, sampleIntervalMs: 80, positionRadiusMeters: 0, accuracyMeters: 0.5, accuracyJitterMeters: 0, speedMaxMetersPerSecond: 0, headingJitterDegrees: 0 };
     const response = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
     expect(response.status).toBe(200);
     const next = await response.json();
@@ -152,7 +152,7 @@ describe('local API', () => {
     await waitForMeasurements(peer.client, 1);
     const original = app.settings;
     const url = `http://127.0.0.1:${port}/api/settings`;
-    for (const patch of [null, [], {}, { seed: 10 }, { latitude: 0 }, { sampleIntervalMs: 0 }, { sampleIntervalMs: '100' }, { sampleIntervalMs: 20, sendDelayMaxMs: 20 }, { accuracyJitterMeters: 0.1 }, { headingJitterDegrees: 181 }, { unknown: 1 }]) {
+    for (const patch of [null, [], {}, { seed: 10 }, { latitude: 0 }, { sampleIntervalMs: 0 }, { sampleIntervalMs: '100' }, { sampleIntervalMs: 20, sendDelayMaxMs: 20 }, { accuracyJitterMeters: 0.1 }, { headingJitterDegrees: 181 }, { historyWindowSeconds: 0.4 }, { historyWindowSeconds: 31 }, { unknown: 1 }]) {
       const response = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
       expect(response.status).toBe(400);
       expect(app.settings).toBe(original);

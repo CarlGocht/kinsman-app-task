@@ -1,6 +1,6 @@
 import type { Measurement } from '../shared/protocol.js';
 import { destination, distanceMeters } from '../shared/geo.js';
-import { positionWindow, weightedPosition } from './weightedPosition.js';
+import { POSITION_WINDOW_MS, positionWindow, weightedPosition } from './weightedPosition.js';
 
 // Initial process-model assumptions; these are not calibrated confidence bounds.
 export const PREDICTION_ASSUMPTIONS = Object.freeze({
@@ -13,6 +13,7 @@ export const PREDICTION_ASSUMPTIONS = Object.freeze({
 export interface Prediction {
   id: string;
   createdAt: string;
+  historyWindowMs: number;
   sourceIds: string[];
   sourceSequenceIds: number[];
   baseTime: string;
@@ -56,9 +57,9 @@ export function predictionAt(prediction: Prediction, time: number) {
   };
 }
 
-export function createPrediction(history: readonly Measurement[], intervalMs: number, jitterMs = 0, createdAt = new Date().toISOString()): Prediction | null {
-  const samples = positionWindow(history);
-  const weighted = weightedPosition(samples);
+export function createPrediction(history: readonly Measurement[], intervalMs: number, jitterMs = 0, windowMs = POSITION_WINDOW_MS, createdAt = new Date().toISOString()): Prediction | null {
+  const samples = positionWindow(history, windowMs);
+  const weighted = weightedPosition(samples, windowMs);
   if (!weighted || samples.length < 2 || !Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(jitterMs) || jitterMs < 0) return null;
   const anchor = samples[0];
   const baseTime = Date.parse(anchor.timeAtSample);
@@ -100,7 +101,7 @@ export function createPrediction(history: readonly Measurement[], intervalMs: nu
   const slopeUncertainty = Math.sqrt(points.reduce((sum, p) => sum
     + (p.weight * (p.t - mean.t) * p.sample.accuracyMeters) ** 2, 0)) / variance;
   const prediction: Prediction = {
-    id: anchor.uniqueId, createdAt, sourceIds: samples.map((p) => p.uniqueId), sourceSequenceIds: samples.map((p) => p.sequentialId),
+    id: anchor.uniqueId, createdAt, historyWindowMs: windowMs, sourceIds: samples.map((p) => p.uniqueId), sourceSequenceIds: samples.map((p) => p.sequentialId),
     baseTime: anchor.timeAtSample, targetTime: new Date(baseTime + intervalMs).toISOString(),
     matchToleranceMs: Math.max(50, jitterMs + 50, intervalMs * 0.25),
     baseLatitude: origin.latitude, baseLongitude: origin.longitude,

@@ -1,6 +1,9 @@
 import type { SensorSettings } from './protocol.js';
 
+export const HISTORY_WINDOW_LIMITS = { min: 0.5, max: 30, default: 3, step: 0.5 } as const;
+
 export const SETTINGS_CONTROLS = [
+  { key: 'historyWindowSeconds', label: 'History weighting window', unit: 's', min: HISTORY_WINDOW_LIMITS.min, max: HISTORY_WINDOW_LIMITS.max, step: HISTORY_WINDOW_LIMITS.step },
   { key: 'sampleIntervalMs', label: 'Sample interval', unit: 'ms', min: 20, max: 10000, step: 10 },
   { key: 'positionRadiusMeters', label: 'Position jitter radius', unit: 'm', min: 0, max: 100, step: 0.01 },
   { key: 'accuracyMeters', label: 'Reported accuracy baseline', unit: 'm', min: 0.001, max: 100, step: 0.001 },

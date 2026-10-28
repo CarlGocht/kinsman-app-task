@@ -42,6 +42,6 @@ export function SettingsControls({ settings, connected, saving, error, onApply }
       {!connected && <p className="footnote">Connect to the sensor server to apply settings.</p>}
       <div className="settings-actions"><button type="submit" disabled={!dirty || !!validation || saving || !connected}>{saving ? 'Applying…' : 'Apply settings'}</button><button type="button" disabled={!dirty || saving} onClick={() => { setEdits({}); setApplied(false); }}>Discard edits</button>{applied && !dirty && <span role="status">Settings applied</span>}</div>
     </form>
-    <p className="footnote">Timing jitter and send delay must fit inside the sample interval. Accuracy jitter must stay below its baseline so reported accuracy stays positive. Changes last until the server restarts.</p>
+    <p className="footnote">Timing jitter and send delay must fit inside the sample interval. Accuracy jitter must stay below its baseline so reported accuracy stays positive. The history window affects weighting, historical accuracy comparison, and prediction fits on subsequent readings. Its recency half-life stays at 3 seconds. Changes last until the server restarts.</p>
   </section>;
 }

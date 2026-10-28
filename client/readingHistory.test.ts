@@ -39,10 +39,33 @@ describe('paired raw and weighted reading history', () => {
     expect(state.pairs[0].weighted!.sources).toHaveLength(100);
     expect(state.pairs.at(-1)!.raw.sequentialId).toBe(50);
     expect(state.pairs.at(-1)!.weighted!.sources).toHaveLength(51);
-    expect(emptyReadingHistory()).toEqual({ pairs: [], window: [], predictions: [] });
+    expect(emptyReadingHistory()).toEqual({ pairs: [], window: [], retained: [], predictions: [] });
   });
   it('preserves raw data when its estimate is unavailable', () => {
     const raw = { ...sample(1, 0), accuracyMeters: 0 };
     expect(appendReading(emptyReadingHistory(), raw).pairs[0]).toEqual({ raw, weighted: null, band: null, predictionEvaluation: null });
+  });
+});
+
+describe('changing historical lookback', () => {
+  it('expands from retained samples and shrinks future snapshots without rewriting saved pairs', () => {
+    const timing = { sampleIntervalMs: 1000, sampleJitterMs: 0, historyWindowSeconds: 1 };
+    let state = emptyReadingHistory();
+    for (let id = 0; id < 4; id++) state = appendReading(state, sample(id, id * 1000), timing);
+    expect(state.window).toHaveLength(1);
+    expect(state.retained).toHaveLength(4);
+    const oldPair = state.pairs[0];
+    state = appendReading(state, sample(4, 4000), { ...timing, historyWindowSeconds: 5 });
+    expect(state.window).toHaveLength(5);
+    expect(state.pairs[0].weighted!.windowMs).toBe(5000);
+    expect(state.pairs[0].band!.comparedSamples).toBe(4);
+    expect(state.predictions[0].prediction.historyWindowMs).toBe(5000);
+    expect(state.pairs[1]).toBe(oldPair);
+    expect(oldPair.weighted!.windowMs).toBe(1000);
+    expect(oldPair.weighted!.sources).toHaveLength(1);
+    state = appendReading(state, sample(5, 5000), { ...timing, historyWindowSeconds: 0.5 });
+    expect(state.window).toHaveLength(1);
+    expect(state.retained).toHaveLength(6);
+    expect(state.pairs[0].weighted!.windowMs).toBe(500);
   });
 });

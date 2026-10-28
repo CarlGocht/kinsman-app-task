@@ -13,12 +13,12 @@ export interface AccuracyBand {
 
 // A conservative diagnostic radius, not a calibrated confidence probability.
 // Compare against prior samples only, excluding the new reading and future samples.
-export function accuracyBand(raw: Measurement, history: readonly Measurement[]): AccuracyBand | null {
+export function accuracyBand(raw: Measurement, history: readonly Measurement[], windowMs = POSITION_WINDOW_MS): AccuracyBand | null {
   const time = Date.parse(raw.timeAtSample);
   if (!Number.isFinite(time) || !weightedPosition([raw])) return null;
   const projected = history.filter((sample) => {
     const age = time - Date.parse(sample.timeAtSample);
-    return sample.uniqueId !== raw.uniqueId && age > 0 && age < POSITION_WINDOW_MS
+    return sample.uniqueId !== raw.uniqueId && age > 0 && age < windowMs
       && Number.isFinite(sample.velocityData.speedMetersPerSecond) && sample.velocityData.speedMetersPerSecond >= 0
       && Number.isFinite(sample.velocityData.headingDegrees);
   }).map((sample) => ({
@@ -26,7 +26,7 @@ export function accuracyBand(raw: Measurement, history: readonly Measurement[]):
     ...destination(sample.latitude, sample.longitude, sample.velocityData.headingDegrees,
       sample.velocityData.speedMetersPerSecond * (time - Date.parse(sample.timeAtSample)) / 1000),
   }));
-  const estimate = weightedPosition(projected);
+  const estimate = weightedPosition(projected, windowMs);
   const baseline: AccuracyBand = {
     radiusMeters: raw.accuracyMeters, reportedAccuracyMeters: raw.accuracyMeters,
     disagreementMeters: null, historySpreadMeters: null, historyAccuracyMeters: null, comparedSamples: 0,

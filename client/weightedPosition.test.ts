@@ -113,3 +113,13 @@ describe('recency weighting', () => {
     expect(result.sources[1].weight / result.sources[0].weight).toBeCloseTo(4 * 2 ** (-1 / 3), 12);
   });
 });
+
+describe('adjustable historical lookback', () => {
+  it('uses the configured time span and excludes its exact lower boundary', () => {
+    const points = [timed(4, 4000), timed(3, 3000), timed(2, 2000), timed(1, 1000)];
+    expect(weightedPosition(points, 1000)!.sources.map((s) => s.sequentialId)).toEqual([4]);
+    expect(weightedPosition(points, 4000)!.sources.map((s) => s.sequentialId)).toEqual([4, 3, 2, 1]);
+    expect(weightedPosition(points, 2000)!.windowMs).toBe(2000);
+    expect(weightedPosition(points, 2000)!.sources.map((s) => s.sequentialId)).toEqual([4, 3]);
+  });
+});

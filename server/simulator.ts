@@ -68,7 +68,11 @@ export class Simulator {
     }, waitMs + interval);
   }
   updateSettings(settings: Readonly<SensorSettings>) {
+    const timingChanged = this.settings.sampleIntervalMs !== settings.sampleIntervalMs
+      || this.settings.sampleJitterMs !== settings.sampleJitterMs
+      || this.settings.sendDelayMaxMs !== settings.sendDelayMaxMs;
     this.settings = settings;
+    if (!timingChanged) return;
     if (this.sampleTimer !== undefined) {
       clearTimeout(this.sampleTimer);
       this.timers.delete(this.sampleTimer);

@@ -5,13 +5,14 @@ describe('settings', () => {
   it('provides immutable defaults and exposes a generated seed', () => {
     const settings = createSettings();
     expect(settings.sampleIntervalMs).toBe(1000);
+    expect(settings.historyWindowSeconds).toBe(3);
     expect(settings.movementSpeedMetersPerSecond).toBe(20);
     expect(settings.accuracyMeters).toBe(0.02);
     expect(Number.isInteger(settings.seed)).toBe(true);
     expect(Object.isFrozen(settings)).toBe(true);
   });
   it('reads startup overrides', () => {
-    expect(settingsFromEnv({ SAMPLE_INTERVAL_MS: '250', SEED: '42', SENSOR_ID: 'test' })).toMatchObject({ sampleIntervalMs: 250, seed: 42, sensorId: 'test' });
+    expect(settingsFromEnv({ HISTORY_WINDOW_SECONDS: '5', SAMPLE_INTERVAL_MS: '250', SEED: '42', SENSOR_ID: 'test' })).toMatchObject({ historyWindowSeconds: 5, sampleIntervalMs: 250, seed: 42, sensorId: 'test' });
     expect(() => settingsFromEnv({ SEED: '' })).toThrow();
   });
   it.each([
