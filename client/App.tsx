@@ -13,6 +13,7 @@ const labels: Record<string, string> = {
 export function App() {
   const sensor = useSensor();
   const latest = sensor.history[0];
+  const band = sensor.pairs[0]?.band;
   const weighted = sensor.pairs[0]?.weighted ?? null;
   return <main>
     <header>
@@ -25,6 +26,11 @@ export function App() {
       <section><p className="label">REPORTED ACCURACY</p><strong>{latest ? `${(latest.accuracyMeters * 100).toFixed(2)} cm` : '—'}</strong><small>Centimeter-scale measurement</small></section>
       <section><p className="label">REPORTED SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Reported speed with measurement jitter</small></section>
     </div>
+    {band && <section className="panel accuracy-summary" aria-label="Current accuracy band">
+      <div className="panel-head"><div><p className="eyebrow">ACCURACY ESTIMATE · RAW #{latest.sequentialId}</p><h2>Estimated band radius: {band.radiusMeters.toFixed(3)} m</h2></div><span className="tag">{band.comparedSamples ? `${band.comparedSamples} prior samples` : 'Sensor only'}</span></div>
+      <p className="footnote">Reported accuracy: {band.reportedAccuracyMeters.toFixed(3)} m · History disagreement: {band.disagreementMeters === null ? 'collecting history' : `${band.disagreementMeters.toFixed(3)} m`} · History spread: {band.historySpreadMeters === null ? '—' : `${band.historySpreadMeters.toFixed(3)} m`}</p>
+      <p className="footnote">Purple map band combines sensor accuracy with motion-adjusted historical agreement. An estimated uncertainty radius, not a guaranteed confidence percentage.{sensor.connection !== 'Connected' ? ' Last received reading; disconnected.' : ''}</p>
+    </section>}
     <LocationMap motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
     <div className="columns">
       <section className="panel">
@@ -41,22 +47,22 @@ export function App() {
     </div>
     <section className="panel history">
       <div className="panel-head"><div><p className="eyebrow">LIVE STREAM</p><h2>Recent measurements</h2></div><span className="tag">{sensor.pairs.length} / 50 pairs</span></div>
-      <p className="footnote">Newest first. Each raw reading is paired with its saved weighted estimate from the latest three seconds of sample timestamps (smaller accuracyMeters means higher weight). Raw readings remain unchanged. The window ends at the newest sample time received; older out-of-order arrivals do not move it backward.</p>
+      <p className="footnote">Newest first. Each raw reading is paired with its saved weighted estimate from the latest three seconds of sample timestamps (smaller accuracyMeters and newer sample times mean higher weight). Raw readings remain unchanged. The window ends at the newest sample time received; older out-of-order arrivals do not move it backward.</p>
       {weighted && <p className="footnote" aria-label="Weighted position sources">
         Window: 3 seconds · {weighted.sources.length} samples · {weighted.sources.slice(0, 8).map((source) => `#${source.sequentialId}: ${(source.weight * 100).toFixed(1)}%`).join(' · ')}{weighted.sources.length > 8 ? ` · +${weighted.sources.length - 8} more` : ''}.
         {' '}Weighted accuracy uses an independent, same-position error model; it is not guaranteed actual accuracy. While moving, the estimate can lag behind the latest raw position.
       </p>}
       {sensor.history.length ? <div className="table-scroll"><table>
-        <thead><tr><th>Source</th><th>Sequence / window</th><th>Sample / window end (UTC)</th><th>Latitude (°)</th><th>Longitude (°)</th><th>Accuracy (m)</th><th>Speed (m/s)</th><th>Heading (°)</th></tr></thead>
+        <thead><tr><th>Source</th><th>Sequence / window</th><th>Sample / window end (UTC)</th><th>Latitude (°)</th><th>Longitude (°)</th><th>Accuracy (m)</th><th>Band radius (m)</th><th>Speed (m/s)</th><th>Heading (°)</th></tr></thead>
         <tbody>
-          {sensor.pairs.map(({ raw: m, weighted: estimate }, index) => <Fragment key={m.uniqueId}>
-            <tr className="raw-row" aria-label={`Raw measurement #${m.sequentialId}`}><th scope="row">Raw</th><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>
+          {sensor.pairs.map(({ raw: m, weighted: estimate, band: savedBand }, index) => <Fragment key={m.uniqueId}>
+            <tr className="raw-row" aria-label={`Raw measurement #${m.sequentialId}`}><th scope="row">Raw</th><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{savedBand ? savedBand.radiusMeters.toFixed(3) : '—'}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>
             <tr className="weighted-row" aria-label={index === 0 ? 'Current weighted position' : `Weighted position paired with raw #${m.sequentialId}`}>
               <th scope="row">Weighted (3 s, {estimate?.sources.length ?? 0} samples)</th>
               <td>Pair #{m.sequentialId}</td>
               {estimate ? <><td>{estimate.timeAtSample}</td><td>{estimate.latitude.toFixed(9)}</td><td>{estimate.longitude.toFixed(9)}</td>
-                <td title="Model-based combined accuracy; assumes independent errors at one position">{estimate.accuracyMeters.toFixed(4)} (model)</td><td>—</td><td>—</td></>
-                : <td colSpan={6}>Estimate unavailable</td>}
+                <td title="Model-based combined accuracy; assumes independent errors at one position">{estimate.accuracyMeters.toFixed(4)} (model)</td><td>—</td><td>—</td><td>—</td></>
+                : <td colSpan={7}>Estimate unavailable</td>}
             </tr>
           </Fragment>)}
         </tbody>

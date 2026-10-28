@@ -1,3 +1,5 @@
+import { accuracyBand } from './accuracyBand.js';
+import type { AccuracyBand } from './accuracyBand.js';
 import type { Measurement } from '../shared/protocol.js';
 import { positionWindow, weightedPosition } from './weightedPosition.js';
 import type { WeightedPosition } from './weightedPosition.js';
@@ -5,6 +7,7 @@ import type { WeightedPosition } from './weightedPosition.js';
 export interface ReadingPair {
   raw: Measurement;
   weighted: WeightedPosition | null;
+  band: AccuracyBand | null;
 }
 export interface ReadingHistory {
   window: Measurement[];
@@ -15,6 +18,6 @@ export function emptyReadingHistory(): ReadingHistory { return { window: [], pai
 // Snapshot the estimate on receipt. Later arrivals never rewrite an earlier pair.
 export function appendReading(previous: ReadingHistory, raw: Measurement): ReadingHistory {
   const window = positionWindow([raw, ...previous.window]);
-  const pair: ReadingPair = { raw, weighted: weightedPosition(window) };
+  const pair: ReadingPair = { raw, weighted: weightedPosition(window), band: accuracyBand(raw, previous.window) };
   return { window, pairs: [pair, ...previous.pairs].slice(0, 50) };
 }

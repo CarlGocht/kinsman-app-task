@@ -16,7 +16,7 @@ describe('paired raw and weighted reading history', () => {
     expect(state.pairs[0].raw).toBe(first);
     expect(state.pairs[0].weighted).toMatchObject({ latitude: first.latitude, timeAtSample: first.timeAtSample });
     const next = appendReading(state, sample(2, 1000, 43.600002));
-    expect(next.pairs[0].weighted!.latitude).toBeCloseTo(43.600001, 10);
+    expect(next.pairs[0].weighted!.latitude).toBeCloseTo(43.6000011150133, 10);
     expect(next.pairs[0].weighted!.sources.map((source) => source.sequentialId)).toEqual([2, 1]);
   });
   it('does not rewrite earlier pairs when new or out-of-order data arrives', () => {
@@ -43,6 +43,6 @@ describe('paired raw and weighted reading history', () => {
   });
   it('preserves raw data when its estimate is unavailable', () => {
     const raw = { ...sample(1, 0), accuracyMeters: 0 };
-    expect(appendReading(emptyReadingHistory(), raw).pairs[0]).toEqual({ raw, weighted: null });
+    expect(appendReading(emptyReadingHistory(), raw).pairs[0]).toEqual({ raw, weighted: null, band: null });
   });
 });

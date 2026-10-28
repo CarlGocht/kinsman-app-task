@@ -9,6 +9,7 @@ export interface WeightedPosition {
 }
 
 export const POSITION_WINDOW_MS = 3000;
+export const RECENCY_HALF_LIFE_MS = 3000;
 
 // Event-time window: (newest sample time - 3 seconds, newest sample time].
 // Arrival order and display-history limits do not determine the estimate.
@@ -37,7 +38,9 @@ export function weightedPosition(history: readonly Measurement[]): WeightedPosit
 
   // Scale inverse-variance weights to avoid squaring reciprocals of tiny accuracies.
   const bestAccuracy = Math.min(...samples.map((sample) => sample.accuracyMeters));
-  const weights = samples.map((sample) => (bestAccuracy / sample.accuracyMeters) ** 2);
+  const end = Date.parse(samples[0].timeAtSample);
+  const weights = samples.map((sample) => (bestAccuracy / sample.accuracyMeters) ** 2
+    * 2 ** (-(end - Date.parse(sample.timeAtSample)) / RECENCY_HALF_LIFE_MS));
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   const anchor = samples[0];
   let latitudeOffset = 0;
@@ -57,7 +60,7 @@ export function weightedPosition(history: readonly Measurement[]): WeightedPosit
     latitude: anchor.latitude + latitudeOffset,
     longitude,
     // Nominal combined uncertainty only under independent, same-position errors.
-    accuracyMeters: bestAccuracy / Math.sqrt(total),
+    accuracyMeters: Math.hypot(...samples.map((sample, index) => sample.accuracyMeters * weights[index] / total)),
     timeAtSample: anchor.timeAtSample,
     sources: samples.map((sample, index) => ({ sequentialId: sample.sequentialId, uniqueId: sample.uniqueId, weight: weights[index] / total })),
   };

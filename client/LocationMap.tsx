@@ -61,6 +61,13 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
       marker.current.setLatLng(point);
     }
     trail.current?.clearLayers();
+    const band = pairs[0]?.band;
+    if (band) {
+      L.circle(point, {
+        radius: band.radiusMeters, color: '#8063a5', fillColor: '#a994c4',
+        fillOpacity: 0.14, weight: 2, className: 'accuracy-map-band',
+      }).bindTooltip(`Estimated accuracy band: ${band.radiusMeters.toFixed(3)} m radius (not a calibrated confidence interval)`).addTo(trail.current!);
+    }
     const chronological = [...history].sort((a, b) => Date.parse(a.timeAtSample) - Date.parse(b.timeAtSample));
     L.polyline(chronological.map((sample) => [sample.latitude, sample.longitude] as L.LatLngTuple), {
       color: '#4b83b3', weight: 2, opacity: 0.55, interactive: false,
@@ -144,6 +151,6 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
     {controls.error && <p className="notice" role="alert">{controls.error}</p>}
     <p id="map-controls" className="map-instructions">Click the map or Tab to focus it, then hold ↑ ↓ ← → to move. Release to stop. {controls.moving ? 'Movement command active.' : 'Arrow keys move the sensor, not the map.'}</p>
     <div ref={container} tabIndex={0} className="location-map" role="region" aria-label="OpenStreetMap showing the sensor location" aria-describedby="map-controls" />
-    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Drag to pan; use + / − to zoom.</p>
+    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Purple circle: latest raw reading’s estimated accuracy band (true meter scale; centimeter bands can be too small to see). Drag to pan; use + / − to zoom.</p>
   </section>;
 }
