@@ -17,6 +17,8 @@ export function seededRandom(seed: number): () => number {
 
 export class Simulator {
   private faultPending = false;
+  private faultDueAt = 0;
+  private faultEligibleAt: string | null = null;
   private lastInjected: FaultState['lastInjected'] = null;
   private random: () => number;
   private motion: Motion;
@@ -60,9 +62,10 @@ export class Simulator {
           headingDegrees: (motion.headingDegrees + (this.random() * 2 - 1) * s.headingJitterDegrees + 360) % 360,
         },
       };
-      if (this.faultPending) {
+      if (this.faultPending && performance.now() >= this.faultDueAt) {
         Object.assign(measurement, destination(measurement.latitude, measurement.longitude, 90, 50));
         this.faultPending = false;
+        this.faultEligibleAt = null;
         this.lastInjected = { uniqueId: measurement.uniqueId, sequentialId: measurement.sequentialId, timeAtSample };
         this.onFaultChange(this.getFaultState());
       }
@@ -77,12 +80,18 @@ export class Simulator {
     }, waitMs + interval);
   }
   getFaultState(): FaultState {
-    return { pending: this.faultPending, targetSequentialId: this.faultPending ? this.sequence + 1 : null,
+    const remainingDelayMs = this.faultPending ? Math.max(0, this.faultDueAt - performance.now()) : 0;
+    return { pending: this.faultPending, delayMs: 3000, remainingDelayMs, eligibleAt: this.faultEligibleAt,
+      targetSequentialId: this.faultPending && remainingDelayMs === 0 ? this.sequence + 1 : null,
       offsetMeters: 50, headingDegrees: 90, lastInjected: this.lastInjected };
   }
   triggerBadDataFault(): FaultState {
-    // A single pending slot makes repeat clicks/requests idempotent until consumed.
+    // Repeated requests neither stack faults nor restart the countdown.
+    if (this.faultPending) return this.getFaultState();
     this.faultPending = true;
+    this.faultDueAt = performance.now() + 3000;
+    this.faultEligibleAt = new Date(Date.now() + 3000).toISOString();
+    this.later(() => { if (this.faultPending) this.onFaultChange(this.getFaultState()); }, 3000);
     const state = this.getFaultState();
     this.onFaultChange(state);
     return state;
@@ -110,6 +119,8 @@ export class Simulator {
   stop() {
     this.running = false;
     this.faultPending = false;
+    this.faultDueAt = 0;
+    this.faultEligibleAt = null;
     this.motion.set({ north: 0, east: 0 });
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();

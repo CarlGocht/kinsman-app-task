@@ -11,7 +11,7 @@ A local location-sensor simulator with a Node.js/TypeScript server and a React/T
 - Run the server in a terminal and the client as a webpage on localhost.
 - Keep recent history in memory.
 
-Deployment setup and automatic fault classification remain deferred. A one-shot bad-position injector is available for exercising the stream and prediction checks.
+Deployment setup and broader fault classification remain deferred; the client now flags prediction-area anomalies. A one-shot bad-position injector is available for exercising the stream and prediction checks.
 
 ## Components
 
@@ -281,14 +281,16 @@ Applying timing settings restarts the sampling countdown while preserving motion
 
 The client retains up to 30 seconds of raw sample-time data independently of the selected lookback and 50 displayed pairs. Increasing the window can immediately draw on that retained data at the next reading; data from before connection cannot be recovered. Shrinking it excludes older points from new estimates while keeping the retention buffer available for later expansion. The gentle recency half-life remains 3 seconds, independently of lookback length. Changing only history or noise settings preserves sampling cadence; timing controls reschedule it. `HISTORY_WINDOW_SECONDS` sets the startup default.
 
-## One-shot bad-position fault
+## Delayed one-shot fault and client detection
 
-Click **Inject 50 m position jump** to offset the next newly generated sensor reading 50 meters east. The offset is applied after normal measurement jitter. True motion and the live avatar are unchanged; IDs, timestamps, velocity, and reported accuracy retain their normal behavior. Subsequent readings return to normal without a compensating change to ground truth or random-noise state.
+Click **Inject 50 m position jump** to start a server-controlled three-second countdown. The first reading generated at or after the deadline is offset 50 meters east after normal jitter; no extra sensor tick is created. At slow sample rates this can take longer than three seconds. The deadline starts when the server accepts the request. True motion/avatar, IDs, timestamps, velocity, reported accuracy, and subsequent random noise remain unchanged.
 
-- `POST /api/faults/bad-data` queues the fixed fault (no request body). There is one pending slot; repeated requests while pending do not stack multiple faults.
-- `GET /api/faults/bad-data` returns pending status, target sequence ID, fixed distance/bearing, and the last injected sample's ID/time.
-- A separate `faults` WebSocket message synchronizes injector status to clients. Sensor measurements carry no injected-fault flag, and the estimator/predictor receives no injector metadata.
+- `POST /api/faults/bad-data` starts the fixed fault countdown (no request body). One pending slot prevents stacking; repeats do not restart the deadline.
+- `GET /api/faults/bad-data` returns pending status, delay/remaining milliseconds, eligibility time, target sequence ID once armed, and the last injected sample ID/time. The target is unknown during the countdown because sampling settings can change.
+- Separate `faults` WebSocket messages synchronize queued, armed, and applied states. Raw measurements contain no fault flag, and detection receives no injector metadata.
 
-The button is disabled while queued or disconnected. Status identifies the generated sample that received the fault; with send delay enabled it may still be in transit. A measurement already generated before the click is not modified—the fault targets the following generation. Changing settings preserves a pending fault; server shutdown clears it.
+The fault panel stays beside the map on wide screens and below it on narrow screens. The disabled pending button shows an approximate client countdown, followed by waiting-for-next-sample status; actual eligibility is enforced by server monotonic time. Already-generated delayed readings are untouched. Settings changes preserve the original deadline; shutdown clears it.
 
-The existing saved-prediction comparison can show the shifted reading outside its previously saved area. This does not yet add a fault classifier or outlier rejection: weighted history and subsequent forecasts will temporarily incorporate the bad sample, which is useful for the next detection work.
+**Detected faults** below the injector lists the latest 50 suspected position anomalies for the current connection, with sample ID/time, forecast error, and saved radius. A detection is recorded only when a raw sample lies outside an eligible forecast saved before that sample arrived. No matching forecast means no classification; duplicate readings do not create duplicate entries. Abrupt legitimate maneuvers may also miss the constant-velocity forecast, so these are suspicion flags rather than a definitive fault diagnosis.
+
+Detected samples remain in raw/weighted histories for review, but are excluded from future prediction fits. A rejected sample does not issue another forecast; the next reading can re-establish a clean model. This avoids the injected outlier poisoning the next forecast and falsely flagging the normal recovery point. Weighted history/accuracy bands still incorporate the suspect point until it ages out. Detections and prediction history reset on reconnect or page reload.

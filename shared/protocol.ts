@@ -47,6 +47,9 @@ export interface MovementState extends MovementCommand {
 // Injector control state is separate from sensor data and prediction inputs.
 export interface FaultState {
   pending: boolean;
+  delayMs: 3000;
+  remainingDelayMs: number;
+  eligibleAt: string | null;
   targetSequentialId: number | null;
   offsetMeters: 50;
   headingDegrees: 90;

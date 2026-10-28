@@ -141,5 +141,5 @@ export function useSensor() {
     };
   }, [refresh, acceptSettings]);
 
-  return { faultState, triggeringFault, faultError, triggerBadDataFault, updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { detections: readings.detections, faultState, triggeringFault, faultError, triggerBadDataFault, updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }

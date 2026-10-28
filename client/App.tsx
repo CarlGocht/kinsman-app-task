@@ -1,3 +1,4 @@
+import { FaultControls } from './FaultControls';
 import { SettingsControls } from './SettingsControls';
 import { Fragment } from 'react';
 import { useSensor } from './useSensor';
@@ -17,6 +18,7 @@ export function App() {
   const latest = sensor.history[0];
   const newestTime = sensor.pairs.length ? Date.parse(sensor.pairs[0].weighted?.timeAtSample ?? sensor.pairs[0].raw.timeAtSample) : -Infinity;
   const forecast = sensor.predictions.find((saved) => !saved.evaluation && Date.parse(saved.prediction.targetTime) > newestTime)?.prediction ?? null;
+  const latestRejected = sensor.pairs[0]?.predictionEvaluation?.insideArea === false;
   const latestEvaluation = sensor.predictions.find((saved) => saved.evaluation)?.evaluation;
   const band = sensor.pairs[0]?.band;
   const weighted = sensor.pairs[0]?.weighted ?? null;
@@ -33,14 +35,7 @@ export function App() {
     </div>
     <div className="map-workspace">
       <LocationMap prediction={forecast} motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
-      <section className="panel fault-controls" aria-label="Fault injection">
-        <div className="panel-head"><div><p className="eyebrow">ONE-SHOT TEST</p><h2>Bad position data</h2></div>
-          <button type="button" disabled={sensor.connection !== 'Connected' || !sensor.faultState || sensor.triggeringFault || sensor.faultState.pending} onClick={() => void sensor.triggerBadDataFault()}>{sensor.triggeringFault ? 'Queuing…' : sensor.faultState?.pending ? `Queued for #${sensor.faultState.targetSequentialId}` : 'Inject 50 m position jump'}</button>
-        </div>
-        <p className="footnote">Offsets the next newly generated reading 50 meters east. The real position, avatar, reported accuracy, and velocity stay unchanged; subsequent readings return to normal.</p>
-        <p role="status" className="footnote">{sensor.faultState?.pending ? `Fault queued for sample #${sensor.faultState.targetSequentialId}.` : sensor.faultState?.lastInjected ? `Applied to sample #${sensor.faultState.lastInjected.sequentialId} at ${sensor.faultState.lastInjected.timeAtSample}.` : 'No fault queued.'}{sensor.connection !== 'Connected' ? ' Disconnected; showing last known injector status.' : ''}</p>
-        {sensor.faultError && <p className="notice" role="alert">{sensor.faultError}</p>}
-      </section>
+      <FaultControls state={sensor.faultState} connected={sensor.connection === 'Connected'} busy={sensor.triggeringFault} error={sensor.faultError} onTrigger={sensor.triggerBadDataFault} detections={sensor.detections} />
     </div>
     <SettingsControls settings={sensor.settings} connected={sensor.connection === 'Connected'} saving={sensor.savingSettings} error={sensor.settingsUpdateError} onApply={sensor.updateSettings} />
     {band && <section className="panel accuracy-summary" aria-label="Current accuracy band">
@@ -49,10 +44,10 @@ export function App() {
       <p className="footnote">Purple map band combines sensor accuracy with motion-adjusted historical agreement. A dashed ring keeps small bands visible and is not to scale. An estimated uncertainty radius, not a guaranteed confidence percentage.{sensor.connection !== 'Connected' ? ' Last received reading; disconnected.' : ''}</p>
     </section>}
     <section className="panel prediction-summary" aria-label="Next reading prediction">
-      <div className="panel-head"><div><p className="eyebrow">NEXT SENSOR READING</p><h2>{forecast ? `Predicted area: ${forecast.radiusMeters.toFixed(3)} m radius` : 'Collecting prediction history'}</h2></div><span className="tag">Constant velocity</span></div>
+      <div className="panel-head"><div><p className="eyebrow">NEXT SENSOR READING</p><h2>{forecast ? `Predicted area: ${forecast.radiusMeters.toFixed(3)} m radius` : latestRejected ? 'Prediction paused after anomaly' : 'Collecting prediction history'}</h2></div><span className="tag">Constant velocity</span></div>
       {forecast ? <><p className="footnote">Target: {forecast.targetTime} · {forecast.latitude.toFixed(9)}°, {forecast.longitude.toFixed(9)}°</p>
         <p className="footnote">Saved {forecast.createdAt} · {forecast.historyWindowMs / 1000} s history · using {forecast.sourceIds.length} readings: {forecast.sourceSequenceIds.slice(0, 8).map((id) => `#${id}`).join(', ')}{forecast.sourceIds.length > 8 ? '…' : ''}.</p>
-        <p className="footnote">Motion uncertainty: {forecast.radiusGrowthMetersPerSecond.toFixed(3)} m/s · acceleration allowance: {forecast.accelerationUncertaintyMetersPerSecondSquared.toFixed(1)} m/s² · timing allowance: {forecast.timingUncertaintyMeters.toFixed(3)} m. A straight recent path does not guarantee unchanged future motion.</p></> : <p className="footnote">Needs at least two distinct sample times in the configured history window and loaded server settings.</p>}
+        <p className="footnote">Motion uncertainty: {forecast.radiusGrowthMetersPerSecond.toFixed(3)} m/s · acceleration allowance: {forecast.accelerationUncertaintyMetersPerSecondSquared.toFixed(1)} m/s² · timing allowance: {forecast.timingUncertaintyMeters.toFixed(3)} m. A straight recent path does not guarantee unchanged future motion.</p></> : <p className="footnote">{latestRejected ? 'The rejected reading is retained in history but excluded from future prediction fits. Waiting for the next reading before forecasting again.' : 'Needs at least two distinct sample times in the configured history window and loaded server settings.'}</p>}
       {latestEvaluation && <p className="prediction-result">Last result: #{latestEvaluation.actualSequentialId} was {latestEvaluation.insideArea ? 'inside' : 'outside'} its saved area · error {latestEvaluation.errorMeters.toFixed(3)} m / radius {latestEvaluation.radiusMeters.toFixed(3)} m.</p>}
       <p className="footnote">Teal point and area: saved forecast before the reading arrives. Area is heuristic, not a calibrated probability; turns and stops can cause misses. {sensor.connection !== 'Connected' ? 'Disconnected: showing last saved forecast.' : ''}</p>
     </section>

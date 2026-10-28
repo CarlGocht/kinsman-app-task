@@ -296,3 +296,11 @@ tbody th { font-weight: 500; background: transparent; }
   .map-workspace { grid-template-columns: minmax(0, 1fr); }
   .map-workspace .fault-controls { position: static; }
 }
+
+.detected-faults { margin-top: 24px; border-top: 1px solid #eaded3; padding-top: 18px; }
+.detected-faults h3 { margin: 0; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.fault-list { list-style: none; padding: 0; margin: 12px 0; max-height: 340px; overflow: auto; }
+.fault-list li { padding: 12px 0; border-bottom: 1px solid #eee4db; font-size: 12px; }
+.fault-list strong, .fault-list time, .fault-list span { display: block; line-height: 1.7; }
+.fault-list strong { color: #984b26; }
+.fault-list time { color: #768584; font: 10px/1.8 ui-monospace, monospace; overflow-wrap: anywhere; }

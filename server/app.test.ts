@@ -164,8 +164,8 @@ describe('local API', () => {
     expect(peer.messages.filter((message) => message.type === 'settings')).toEqual([{ type: 'settings', data: original }]);
     expect(await (await fetch(url)).json()).toEqual(original);
   });
-  it('arms and consumes a one-shot position fault across all connected clients', async () => {
-    const app = createApp({ seed: 42, sampleIntervalMs: 300, sampleJitterMs: 0, sendDelayMaxMs: 0, positionRadiusMeters: 0 });
+  it('delays a one-shot position fault and synchronizes all connected clients', async () => {
+    const app = createApp({ seed: 42, sampleIntervalMs: 100, sampleJitterMs: 0, sendDelayMaxMs: 0, positionRadiusMeters: 0 });
     apps.push(app);
     const port = await app.listen(0);
     const first = await connect(port), second = await connect(port);
@@ -174,20 +174,27 @@ describe('local API', () => {
     const armedResponse = await fetch(url, { method: 'POST' });
     expect(armedResponse.status).toBe(200);
     const armed = await armedResponse.json();
-    expect(armed).toMatchObject({ pending: true, offsetMeters: 50, headingDegrees: 90 });
-    const [samples, peerSamples] = await Promise.all([waitForMeasurements(first.client, 2), waitForMeasurements(second.client, 2)]);
-    expect(samples).toEqual(peerSamples);
-    const injected = samples.find((sample) => sample.sequentialId === armed.targetSequentialId)!;
-    expect(injected).toBeDefined();
-    expect(distanceMeters(app.settings, injected)).toBeCloseTo(50, 5);
-    const normal = samples.find((sample) => sample.sequentialId > armed.targetSequentialId)!;
-    expect(distanceMeters(app.settings, normal)).toBeLessThan(1e-6);
-    const final = await (await fetch(url)).json();
-    expect(final).toMatchObject({ pending: false, lastInjected: { uniqueId: injected.uniqueId, sequentialId: injected.sequentialId } });
+    expect(armed).toMatchObject({ pending: true, delayMs: 3000, targetSequentialId: null, offsetMeters: 50, headingDegrees: 90 });
+    const applied = await new Promise<{ sequentialId: number }>((resolve, reject) => {
+      const timeout = setTimeout(() => { first.client.off('message', receive); reject(new Error('Fault not applied')); }, 4200);
+      function receive(data: Buffer) {
+        const message = JSON.parse(data.toString()) as ServerMessage;
+        if (message.type === 'faults' && message.data.lastInjected) {
+          clearTimeout(timeout); first.client.off('message', receive); resolve(message.data.lastInjected);
+        }
+      }
+      first.client.on('message', receive);
+    });
+    await Promise.all([waitForMeasurements(first.client, 2), waitForMeasurements(second.client, 2)]);
     for (const peer of [first, second]) {
+      const samples = peer.messages.filter((message) => message.type === 'measurement').map((message) => message.data);
+      const injected = samples.find((sample) => sample.sequentialId === applied.sequentialId)!;
+      expect(distanceMeters(app.settings, injected)).toBeCloseTo(50, 5);
+      expect(Date.parse(injected.timeAtSample)).toBeGreaterThanOrEqual(Date.parse(armed.eligibleAt));
+      for (const sample of samples.filter((sample) => sample !== injected)) expect(distanceMeters(app.settings, sample)).toBeLessThan(1e-6);
       expect(peer.messages).toContainEqual({ type: 'faults', data: armed });
-      expect(peer.messages).toContainEqual({ type: 'faults', data: final });
     }
+    expect(await (await fetch(url)).json()).toMatchObject({ pending: false, lastInjected: { sequentialId: applied.sequentialId } });
     expect((await fetch(url, { method: 'DELETE' })).status).toBe(405);
   });
   it('rejects WebSocket upgrades outside /ws', async () => {
