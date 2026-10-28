@@ -13,6 +13,9 @@ const labels: Record<string, string> = {
 export function App() {
   const sensor = useSensor();
   const latest = sensor.history[0];
+  const newestTime = sensor.pairs.length ? Date.parse(sensor.pairs[0].weighted?.timeAtSample ?? sensor.pairs[0].raw.timeAtSample) : -Infinity;
+  const forecast = sensor.predictions.find((saved) => !saved.evaluation && Date.parse(saved.prediction.targetTime) > newestTime)?.prediction ?? null;
+  const latestEvaluation = sensor.predictions.find((saved) => saved.evaluation)?.evaluation;
   const band = sensor.pairs[0]?.band;
   const weighted = sensor.pairs[0]?.weighted ?? null;
   return <main>
@@ -31,7 +34,14 @@ export function App() {
       <p className="footnote">Reported accuracy: {band.reportedAccuracyMeters.toFixed(3)} m · History disagreement: {band.disagreementMeters === null ? 'collecting history' : `${band.disagreementMeters.toFixed(3)} m`} · History spread: {band.historySpreadMeters === null ? '—' : `${band.historySpreadMeters.toFixed(3)} m`}</p>
       <p className="footnote">Purple map band combines sensor accuracy with motion-adjusted historical agreement. A dashed ring keeps small bands visible and is not to scale. An estimated uncertainty radius, not a guaranteed confidence percentage.{sensor.connection !== 'Connected' ? ' Last received reading; disconnected.' : ''}</p>
     </section>}
-    <LocationMap motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
+    <section className="panel prediction-summary" aria-label="Next reading prediction">
+      <div className="panel-head"><div><p className="eyebrow">NEXT SENSOR READING</p><h2>{forecast ? `Predicted area: ${forecast.radiusMeters.toFixed(3)} m radius` : 'Collecting prediction history'}</h2></div><span className="tag">Constant velocity</span></div>
+      {forecast ? <><p className="footnote">Target: {forecast.targetTime} · {forecast.latitude.toFixed(9)}°, {forecast.longitude.toFixed(9)}°</p>
+        <p className="footnote">Saved {forecast.createdAt} using {forecast.sourceIds.length} readings: {forecast.sourceSequenceIds.slice(0, 8).map((id) => `#${id}`).join(', ')}{forecast.sourceIds.length > 8 ? '…' : ''}.</p></> : <p className="footnote">Needs at least two distinct sample times in the three-second window and loaded server settings.</p>}
+      {latestEvaluation && <p className="prediction-result">Last result: #{latestEvaluation.actualSequentialId} was {latestEvaluation.insideArea ? 'inside' : 'outside'} its saved area · error {latestEvaluation.errorMeters.toFixed(3)} m / radius {latestEvaluation.radiusMeters.toFixed(3)} m.</p>}
+      <p className="footnote">Teal point and area: saved forecast before the reading arrives. Area is heuristic, not a calibrated probability; turns and stops can cause misses. {sensor.connection !== 'Connected' ? 'Disconnected: showing last saved forecast.' : ''}</p>
+    </section>
+    <LocationMap prediction={forecast} motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
     <div className="columns">
       <section className="panel">
         <div className="panel-head"><div><p className="eyebrow">CONFIGURATION</p><h2>Current settings</h2></div><button onClick={() => void sensor.refresh()} disabled={sensor.refreshing}>{sensor.refreshing ? 'Refreshing…' : 'Refresh settings'}</button></div>
@@ -67,6 +77,13 @@ export function App() {
           </Fragment>)}
         </tbody>
       </table></div> : <p className="empty">Measurements will appear here once the server starts streaming.</p>}
+    </section>
+    <section className="panel history">
+      <div className="panel-head"><div><p className="eyebrow">PREDICT BEFORE OBSERVING</p><h2>Saved prediction log</h2></div><span className="tag">{sensor.predictions.length} / 50</span></div>
+      <p className="footnote">Newest first. Showing up to 20 forecasts. Actual sample timing may differ slightly from the target; scoring projects the unchanged saved model to that sample time. No current reading is used to refit or widen its own prediction.</p>
+      {sensor.predictions.length ? <div className="table-scroll"><table aria-label="Saved predictions"><thead><tr><th>Sources</th><th>Saved at (UTC)</th><th>Target time (UTC)</th><th>Predicted latitude (°)</th><th>Predicted longitude (°)</th><th>Target radius (m)</th><th>Actual sample</th><th>Error / scored radius (m)</th><th>Result</th></tr></thead><tbody>
+        {sensor.predictions.slice(0, 20).map(({ prediction: p, evaluation }) => <tr key={p.id}><td title={p.sourceIds.join(', ')}>{p.sourceSequenceIds.slice(0, 5).map((id) => `#${id}`).join(', ')}{p.sourceIds.length > 5 ? '…' : ''}</td><td>{p.createdAt}</td><td>{p.targetTime}</td><td>{p.latitude.toFixed(9)}</td><td>{p.longitude.toFixed(9)}</td><td>{p.radiusMeters.toFixed(3)}</td><td>{evaluation ? `#${evaluation.actualSequentialId} · ${evaluation.actualTime}` : '—'}</td><td>{evaluation ? `${evaluation.errorMeters.toFixed(3)} / ${evaluation.radiusMeters.toFixed(3)}` : '—'}</td><td>{evaluation ? (evaluation.insideArea ? 'Inside area' : 'Outside area') : 'Awaiting matching reading'}</td></tr>)}
+      </tbody></table></div> : <p className="empty">Forecasts will be saved as sensor history becomes available.</p>}
     </section>
     <footer>Local sensor monitor <span>HTTP settings · WebSocket measurements</span></footer>
   </main>;

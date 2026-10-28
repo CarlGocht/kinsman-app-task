@@ -1,3 +1,4 @@
+import type { Prediction } from './prediction';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { avatarPosition } from './avatar';
 import type { MotionSnapshot } from './avatar';
@@ -9,17 +10,19 @@ import type { ReadingPair } from './readingHistory';
 
 interface LocationMapProps {
   pairs: ReadingPair[];
+  prediction: Prediction | null;
   motion: MotionSnapshot | null;
   connected: boolean;
 }
 
-export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
+export function LocationMap({ pairs, connected, motion, prediction }: LocationMapProps) {
   const history = useMemo(() => pairs.map((pair) => pair.raw), [pairs]);
   const measurement = history[0];
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const marker = useRef<L.CircleMarker | null>(null);
   const trail = useRef<L.LayerGroup | null>(null);
+  const predictionLayer = useRef<L.LayerGroup | null>(null);
   const avatar = useRef<L.Marker | null>(null);
   const snapshot = useRef(motion);
   snapshot.current = motion;
@@ -31,6 +34,7 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
     const instance = L.map(container.current, { scrollWheelZoom: false, keyboard: false }).setView([0, 0], 2);
     map.current = instance;
     trail.current = L.layerGroup().addTo(instance);
+    predictionLayer.current = L.layerGroup().addTo(instance);
     // Wait for a real measurement before requesting map tiles.
     const observer = new ResizeObserver(() => instance.invalidateSize());
     observer.observe(container.current);
@@ -40,6 +44,7 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
       map.current = null;
       marker.current = null;
       trail.current = null;
+      predictionLayer.current = null;
       avatar.current = null;
     };
   }, []);
@@ -114,6 +119,17 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
   }, [measurement, history, pairs]);
 
   useEffect(() => {
+    const layer = predictionLayer.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (!prediction) return;
+    const point: L.LatLngTuple = [prediction.latitude, prediction.longitude];
+    const label = `Saved next-reading forecast · ${prediction.targetTime} · radius ${prediction.radiusMeters.toFixed(3)} m`;
+    L.circle(point, { radius: prediction.radiusMeters, color: '#168a99', fillColor: '#59b7c3', fillOpacity: 0.12, dashArray: '7 5', weight: 2, className: 'prediction-map-area' }).bindTooltip(label).addTo(layer);
+    L.circleMarker(point, { radius: 5, color: '#168a99', fillColor: '#ffffff', fillOpacity: 1, weight: 2, className: 'prediction-map-point' }).bindTooltip(label).addTo(layer);
+  }, [prediction]);
+
+  useEffect(() => {
     if (!connected) return;
     const body = document.createElement('div');
     body.className = 'avatar-body';
@@ -168,6 +184,6 @@ export function LocationMap({ pairs, connected, motion }: LocationMapProps) {
     {controls.error && <p className="notice" role="alert">{controls.error}</p>}
     <p id="map-controls" className="map-instructions">Click the map or Tab to focus it, then hold ↑ ↓ ← → to move. Release to stop. {controls.moving ? 'Movement command active.' : 'Arrow keys move the sensor, not the map.'}</p>
     <div ref={container} tabIndex={0} className="location-map" role="region" aria-label="OpenStreetMap showing the sensor location" aria-describedby="map-controls" />
-    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Purple circle: estimated accuracy band at true meter scale. When it is too small to see, a dashed 12-pixel ring marks it for visibility only; use the numeric radius for its actual size. Drag to pan; use + / − to zoom.</p>
+    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Purple circle: estimated accuracy band at true meter scale. When it is too small to see, a dashed 12-pixel ring marks it for visibility only; use the numeric radius for its actual size. Teal point and dashed area: saved next-reading forecast, at true meter scale. Drag to pan; use + / − to zoom.</p>
   </section>;
 }

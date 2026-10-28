@@ -256,3 +256,6 @@ tbody th { font-weight: 500; background: transparent; }
 .raw-row th { color: #326e9f; }
 
 .accuracy-summary { margin-bottom: 22px; border-left: 4px solid #8063a5; }
+
+.prediction-summary { margin-bottom: 22px; border-left: 4px solid #168a99; }
+.prediction-result { font-size: 13px; color: #276673; }

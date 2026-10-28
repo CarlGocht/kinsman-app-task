@@ -39,10 +39,10 @@ describe('paired raw and weighted reading history', () => {
     expect(state.pairs[0].weighted!.sources).toHaveLength(100);
     expect(state.pairs.at(-1)!.raw.sequentialId).toBe(50);
     expect(state.pairs.at(-1)!.weighted!.sources).toHaveLength(51);
-    expect(emptyReadingHistory()).toEqual({ pairs: [], window: [] });
+    expect(emptyReadingHistory()).toEqual({ pairs: [], window: [], predictions: [] });
   });
   it('preserves raw data when its estimate is unavailable', () => {
     const raw = { ...sample(1, 0), accuracyMeters: 0 };
-    expect(appendReading(emptyReadingHistory(), raw).pairs[0]).toEqual({ raw, weighted: null, band: null });
+    expect(appendReading(emptyReadingHistory(), raw).pairs[0]).toEqual({ raw, weighted: null, band: null, predictionEvaluation: null });
   });
 });

@@ -13,6 +13,8 @@ export function useSensor() {
   const history = useMemo(() => readings.pairs.map((pair) => pair.raw), [readings.pairs]);
   const [clients, setClients] = useState<number | null>(null);
   const [streamError, setStreamError] = useState('');
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const request = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
@@ -57,7 +59,7 @@ export function useSensor() {
           const message = JSON.parse(event.data) as ServerMessage;
           if (message.type === 'motion') setMotion({ state: message.data, receivedAt: performance.now() });
           if (message.type === 'measurement') {
-            setReadings((previous) => appendReading(previous, message.data));
+            setReadings((previous) => appendReading(previous, message.data, settingsRef.current));
           }
           if (message.type === 'status') setClients(message.data.connectedClients);
         } catch {
@@ -82,5 +84,5 @@ export function useSensor() {
     };
   }, [refresh]);
 
-  return { pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }
