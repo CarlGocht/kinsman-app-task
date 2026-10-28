@@ -27,6 +27,31 @@ Send sensor measurements from the server to the client. Keep sensor messages sep
 
 Use React and TypeScript to display connection status, current coordinates, velocity, accuracy, timestamps, identifiers, and recent sample history.
 
+## Planned API and settings
+
+- **WebSocket `/ws`:** stream sensor measurements and separate simulation status messages to connected clients.
+- **HTTP `GET /api/settings`:** return the effective settings currently used by the running simulator, so the client can display them for debugging.
+- **Central configuration:** define `sampleIntervalMs` with a default of `1000` (one sample per second), plus `sensorId` and `accuracyMeters`. Allow startup configuration overrides so changing the interval does not require editing the sampling loop. Validate settings before starting.
+- **Client settings display:** fetch settings on connection and reconnection, and provide a refresh action to retrieve the current values. The sampling loop and settings endpoint must use the same configuration source.
+
+Settings are read-only through the API initially; runtime editing can be added later. Use elapsed sample time when calculating route movement and velocity so changing the sample interval preserves the simulated speed.
+
+## Server testing plan
+
+Use [Vitest](https://vitest.dev/guide/) in the Node environment for unit and integration tests. Use [fake timers](https://vitest.dev/guide/mocking/timers) and a controlled clock for deterministic timing tests, plus real local HTTP and WebSocket connections on temporary ports for integration tests.
+
+Initial tests will cover:
+
+- **Configuration:** defaults, startup overrides, and rejection of invalid settings such as a zero or negative sample interval.
+- **Measurement contract:** required fields, valid coordinates, centimeter-scale accuracy, velocity units, and valid timestamps with sample time no later than send time.
+- **Identifiers:** stable sensor ID, unique measurement UUIDs, and sequential IDs increasing from `1`.
+- **Route and timing:** repeatable movement, default and overridden sample intervals, and consistent speed when the interval changes.
+- **Settings endpoint:** successful JSON response containing the effective configuration, including overridden values matching the simulator's behavior.
+- **WebSocket delivery:** valid serialized samples arriving in order, multiple clients receiving the same measurement IDs, and a disconnected client not interrupting other clients.
+- **Lifecycle:** clean shutdown closes connections and stops sampling timers.
+
+These tests cover normal server behavior only; sensor fault injection and detection remain deferred.
+
 ## Planned measurement format
 
 The following is the planned data contract, not an implemented API:
@@ -64,10 +89,10 @@ The client can also record its local receive time separately from the transmitte
 
 ## Implementation plan
 
-1. **Project setup:** establish the Node.js/TypeScript server, React/TypeScript client, and shared message types.
+1. **Project setup:** establish the Node.js/TypeScript server, React/TypeScript client, shared message types, and the server test framework.
 2. **Healthy simulator:** generate one repeatable route at one sample per second, including position, velocity, and measurement metadata.
-3. **WebSocket connection:** stream measurements and report connection and simulation status.
-4. **Client dashboard:** show current measurement details and recent sample history.
+3. **API setup:** stream measurements over WebSocket, report connection and simulation status, and expose current settings through HTTP.
+4. **Client dashboard:** show current measurement details, current settings, and recent sample history.
 5. **Local workflow:** document commands to start both components and verify continuous delivery of measurements.
 
 ## Getting started
