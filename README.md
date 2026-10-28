@@ -137,7 +137,9 @@ In a second terminal, start the browser client:
 npm run dev:client
 ```
 
-Open [the sensor monitor](http://127.0.0.1:5173/). It displays all effective settings, the latest full measurement payload, and a rolling table of the most recent 50 samples. Settings load initially and whenever the stream reconnects; use **Refresh settings** to fetch them manually. The client automatically retries disconnected streams every two seconds and starts a fresh history after reconnecting. Last received data remains visible while disconnected.
+Open [the sensor monitor](http://127.0.0.1:5173/). It displays an OpenStreetMap view with a dot at the latest received sensor coordinates, all effective settings, the latest full measurement payload, and a rolling table of the most recent 50 samples. Settings load initially and whenever the stream reconnects; use **Refresh settings** to fetch them manually. The client automatically retries disconnected streams every two seconds and starts a fresh history after reconnecting. Last received data remains visible while disconnected.
+
+The map uses Leaflet and OpenStreetMap tiles with visible attribution. Map tiles require an internet connection; the sensor stream remains local. The dot updates without resetting manual pan/zoom; **Center on sensor** returns to the latest position. While disconnected, the last received position is retained and labeled. Centimeter-scale jitter is not visibly distinguishable at street-map zoom.
 
 The Vite development server proxies `/api` and `/ws` to the sensor server. If you change its port, set the proxy target when starting the client, for example `SENSOR_SERVER_URL=http://127.0.0.1:4001 npm run dev:client`. The client runs locally without a deployment setup.
 
@@ -201,3 +203,7 @@ npm start                # Run the compiled server
 ## Development
 
 Keep secrets in local environment files, which are ignored by Git.
+
+## Future velocity interpretation
+
+Keep the current raw speed and heading readings unchanged for now. Stationary heading is synthetic and biased toward north; speed and heading noise are currently independent of positional jitter. A future model may derive both from noisy east/north velocity components. Decisions such as labeling heading unavailable below a speed threshold belong in the frontend, while the server continues reporting raw numeric measurements.

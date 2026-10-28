@@ -222,3 +222,21 @@ pre {
   font-size:11px}
 }
 
+
+.location-panel {
+  margin-bottom: 22px;
+}
+.location-map {
+  height: 360px;
+  width: 100%;
+  border-radius: 7px;
+  border: 1px solid #dce3dd;
+  background: #edf1ed;
+  z-index: 0;
+}
+.location-map .leaflet-control-attribution {
+  font-size: 11px;
+}
+@media (max-width: 520px) {
+  .location-map { height: 300px; }
+}
