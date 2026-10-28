@@ -304,3 +304,7 @@ tbody th { font-weight: 500; background: transparent; }
 .fault-list strong, .fault-list time, .fault-list span { display: block; line-height: 1.7; }
 .fault-list strong { color: #984b26; }
 .fault-list time { color: #768584; font: 10px/1.8 ui-monospace, monospace; overflow-wrap: anywhere; }
+
+.fault-selector-label { font-size: 12px; font-weight: 600; }
+.fault-controls select { width: 100%; padding: 10px; border: 1px solid #d5ac8a; border-radius: 6px; background: white; color: #193238; font: inherit; font-size: 13px; }
+.fault-list pre { min-height: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; padding: 8px; }

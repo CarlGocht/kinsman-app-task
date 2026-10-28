@@ -1,5 +1,7 @@
+import { SensorDetector } from './sensorDetector';
+import type { FaultKind } from '../shared/faults';
 import type { SettingsPatch } from '../shared/settingsControls';
-import { appendReading, emptyReadingHistory } from './readingHistory';
+import { appendReading, emptyReadingHistory, recordDetections } from './readingHistory';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FaultState, MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
 
@@ -70,11 +72,11 @@ export function useSensor() {
     } finally { setSavingSettings(false); }
   }, [acceptSettings]);
 
-  const triggerBadDataFault = useCallback(async () => {
+  const triggerFault = useCallback(async (kind: FaultKind = 'position-jump') => {
     setTriggeringFault(true); setFaultError('');
     const generation = faultGeneration.current;
     try {
-      const response = await fetch('/api/faults/bad-data', { method: 'POST', signal: AbortSignal.timeout(5000) });
+      const response = await fetch('/api/faults', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind }), signal: AbortSignal.timeout(5000) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? 'Unable to trigger fault');
       if (faultGeneration.current === generation) setFaultState(body as FaultState);
@@ -84,6 +86,12 @@ export function useSensor() {
 
   useEffect(() => {
     let disposed = false;
+    let detector = new SensorDetector();
+    let connected = false;
+    let outageLogged = false;
+    const watchdog = setInterval(() => {
+      if (connected) { const events = detector.tick(performance.now()); if (events.length) setReadings((previous) => recordDetections(previous, events)); }
+    }, 250);
     let socket: WebSocket;
     let retry: ReturnType<typeof setTimeout> | undefined;
     void refresh();
@@ -92,12 +100,13 @@ export function useSensor() {
       socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
       socket.onopen = () => {
         if (disposed) return;
+        connected = true; outageLogged = false; detector = new SensorDetector();
         setConnection('Connected');
         setStreamError('');
         setMotion(null);
         setFaultState(null);
         setFaultError('');
-        setReadings(emptyReadingHistory()); // A server restart can reset sequence IDs; start a fresh connection history.
+        setReadings((previous) => ({ ...emptyReadingHistory(), detections: previous.detections })); // Reset stream baselines, retain the audit log across outages.
         void refresh();
       };
       socket.onmessage = (event) => {
@@ -116,16 +125,29 @@ export function useSensor() {
           }
           if (message.type === 'motion') setMotion({ state: message.data, receivedAt: performance.now() });
           if (message.type === 'measurement') {
-            setReadings((previous) => appendReading(previous, message.data, settingsRef.current));
+            const observed = detector.observe(message.data, performance.now());
+            // Transport/schema detections and estimator updates share a single state transition.
+            setReadings((previous) => {
+              const next = observed.measurement ? appendReading(previous, observed.measurement, settingsRef.current) : previous;
+              return recordDetections(next, observed.events);
+            });
           }
           if (message.type === 'status') setClients(message.data.connectedClients);
         } catch {
+          const observed = detector.observe(event.data, performance.now());
+          setReadings((previous) => recordDetections(previous, observed.events));
           setStreamError('Unable to read a server message.');
         }
       };
       socket.onerror = () => { if (!disposed) setStreamError('Cannot reach the sensor stream. Check that the server is running.'); };
       socket.onclose = () => {
         if (disposed) return;
+        if (connected && !outageLogged) {
+          outageLogged = true;
+          const event = detector.disconnected(performance.now());
+          setReadings((previous) => recordDetections(previous, [event]));
+        }
+        connected = false;
         setConnection('Disconnected');
         setClients(null);
         retry = setTimeout(connect, 2000);
@@ -135,11 +157,12 @@ export function useSensor() {
     return () => {
       disposed = true;
       clearTimeout(retry);
+      clearInterval(watchdog);
       socket.onclose = null;
       socket.close();
       request.current?.abort();
     };
   }, [refresh, acceptSettings]);
 
-  return { detections: readings.detections, faultState, triggeringFault, faultError, triggerBadDataFault, updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { detections: readings.detections, faultState, triggeringFault, faultError, triggerFault, updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }

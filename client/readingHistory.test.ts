@@ -78,7 +78,7 @@ describe('independent position anomaly detection', () => {
     state = appendReading(state, anomaly);
     expect(state.detections).toHaveLength(1);
     expect(state.detections[0]).toMatchObject({ sampleId: anomaly.uniqueId, sequentialId: 3, reason: 'outside-prediction-area' });
-    expect(state.detections[0].errorMeters).toBeGreaterThan(state.detections[0].radiusMeters);
+    expect(state.detections[0].errorMeters).toBeGreaterThan(state.detections[0].radiusMeters!);
     const detection = state.detections[0];
     state = appendReading(state, anomaly);
     expect(state.detections).toHaveLength(1);

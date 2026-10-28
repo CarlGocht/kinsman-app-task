@@ -35,7 +35,7 @@ export function App() {
     </div>
     <div className="map-workspace">
       <LocationMap prediction={forecast} motion={sensor.motion} pairs={sensor.pairs} connected={sensor.connection === 'Connected'} />
-      <FaultControls state={sensor.faultState} connected={sensor.connection === 'Connected'} busy={sensor.triggeringFault} error={sensor.faultError} onTrigger={sensor.triggerBadDataFault} detections={sensor.detections} />
+      <FaultControls state={sensor.faultState} connected={sensor.connection === 'Connected'} busy={sensor.triggeringFault} error={sensor.faultError} onTrigger={sensor.triggerFault} detections={sensor.detections} />
     </div>
     <SettingsControls settings={sensor.settings} connected={sensor.connection === 'Connected'} saving={sensor.savingSettings} error={sensor.settingsUpdateError} onApply={sensor.updateSettings} />
     {band && <section className="panel accuracy-summary" aria-label="Current accuracy band">

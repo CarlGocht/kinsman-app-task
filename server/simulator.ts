@@ -1,4 +1,5 @@
-import { destination } from '../shared/geo.js';
+import { FaultInjector } from './faultInjector.js';
+import type { FaultKind } from '../shared/faults.js';
 import { Motion } from './motion.js';
 import type { FaultState, MovementCommand } from '../shared/protocol.js';
 import { randomUUID } from 'node:crypto';
@@ -16,10 +17,7 @@ export function seededRandom(seed: number): () => number {
 }
 
 export class Simulator {
-  private faultPending = false;
-  private faultDueAt = 0;
-  private faultEligibleAt: string | null = null;
-  private lastInjected: FaultState['lastInjected'] = null;
+  private injector: FaultInjector;
   private random: () => number;
   private motion: Motion;
   private sequence = 0;
@@ -27,7 +25,8 @@ export class Simulator {
   private running = false;
   private sampleTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingSendUntil = 0;
-  constructor(private settings: Readonly<SensorSettings>, private emit: (measurement: Measurement) => void, private onFaultChange: (state: FaultState) => void = () => {}) {
+  constructor(private settings: Readonly<SensorSettings>, private emit: (measurement: Measurement) => void, private onFaultChange: (state: FaultState) => void = () => {}, private onInterrupt: (ms: number) => void = () => {}) {
+    this.injector = new FaultInjector(onFaultChange);
     this.random = seededRandom(settings.seed);
     this.motion = new Motion(settings);
   }
@@ -62,40 +61,28 @@ export class Simulator {
           headingDegrees: (motion.headingDegrees + (this.random() * 2 - 1) * s.headingJitterDegrees + 360) % 360,
         },
       };
-      if (this.faultPending && performance.now() >= this.faultDueAt) {
-        Object.assign(measurement, destination(measurement.latitude, measurement.longitude, 90, 50));
-        this.faultPending = false;
-        this.faultEligibleAt = null;
-        this.lastInjected = { uniqueId: measurement.uniqueId, sequentialId: measurement.sequentialId, timeAtSample };
-        this.onFaultChange(this.getFaultState());
-      }
+      const effect = this.injector.process(measurement, s.sampleIntervalMs);
+      if (effect.disconnectMs) this.onInterrupt(effect.disconnectMs);
       const delay = this.random() * s.sendDelayMaxMs;
       this.pendingSendUntil = performance.now() + delay;
       this.later(() => {
         this.pendingSendUntil = 0;
-        measurement.timeAtSend = new Date().toISOString();
-        this.emit(measurement);
+        for (const reading of effect.readings) {
+          reading.timeAtSend = new Date().toISOString();
+          this.emit(reading);
+        }
       }, delay);
-      this.schedule();
+      this.schedule(effect.pauseMs);
     }, waitMs + interval);
   }
-  getFaultState(): FaultState {
-    const remainingDelayMs = this.faultPending ? Math.max(0, this.faultDueAt - performance.now()) : 0;
-    return { pending: this.faultPending, delayMs: 3000, remainingDelayMs, eligibleAt: this.faultEligibleAt,
-      targetSequentialId: this.faultPending && remainingDelayMs === 0 ? this.sequence + 1 : null,
-      offsetMeters: 50, headingDegrees: 90, lastInjected: this.lastInjected };
-  }
-  triggerBadDataFault(): FaultState {
-    // Repeated requests neither stack faults nor restart the countdown.
-    if (this.faultPending) return this.getFaultState();
-    this.faultPending = true;
-    this.faultDueAt = performance.now() + 3000;
-    this.faultEligibleAt = new Date(Date.now() + 3000).toISOString();
-    this.later(() => { if (this.faultPending) this.onFaultChange(this.getFaultState()); }, 3000);
-    const state = this.getFaultState();
-    this.onFaultChange(state);
+  getFaultState(): FaultState { return this.injector.state(this.sequence); }
+  triggerFault(kind: FaultKind): FaultState {
+    const before = this.getFaultState();
+    const state = this.injector.arm(kind, this.sequence);
+    if (!before.pending && !before.active) this.later(() => this.onFaultChange(this.getFaultState()), 3000);
     return state;
   }
+  triggerBadDataFault(): FaultState { return this.triggerFault('position-jump'); }
   updateSettings(settings: Readonly<SensorSettings>) {
     const timingChanged = this.settings.sampleIntervalMs !== settings.sampleIntervalMs
       || this.settings.sampleJitterMs !== settings.sampleJitterMs
@@ -107,7 +94,7 @@ export class Simulator {
       this.timers.delete(this.sampleTimer);
       this.sampleTimer = undefined;
     }
-    if (this.running) this.schedule(Math.max(0, this.pendingSendUntil - performance.now()));
+    if (this.running) this.schedule(Math.max(0, this.pendingSendUntil - performance.now(), this.injector.samplingPauseMs));
   }
   setMovement(command: MovementCommand) { return this.motion.set(command); }
   getMovement() { return this.motion.get(); }
@@ -118,9 +105,7 @@ export class Simulator {
   }
   stop() {
     this.running = false;
-    this.faultPending = false;
-    this.faultDueAt = 0;
-    this.faultEligibleAt = null;
+    this.injector.clear();
     this.motion.set({ north: 0, east: 0 });
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();

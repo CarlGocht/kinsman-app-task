@@ -1,3 +1,4 @@
+import type { FaultKind } from './faults.js';
 export interface SensorSettings {
   sensorId: string;
   seed: number;
@@ -47,11 +48,14 @@ export interface MovementState extends MovementCommand {
 // Injector control state is separate from sensor data and prediction inputs.
 export interface FaultState {
   pending: boolean;
+  active: boolean;
+  kind: FaultKind | null;
+  remainingDurationMs: number;
   delayMs: 3000;
   remainingDelayMs: number;
   eligibleAt: string | null;
   targetSequentialId: number | null;
   offsetMeters: 50;
   headingDegrees: 90;
-  lastInjected: { uniqueId: string; sequentialId: number; timeAtSample: string } | null;
+  lastInjected: { uniqueId: string; sequentialId: number; timeAtSample: string; kind?: FaultKind } | null;
 }

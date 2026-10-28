@@ -1,3 +1,4 @@
+import { isFaultKind } from '../shared/faults.js';
 import { applyJson } from './httpJson.js';
 import { settingsPatchError } from '../shared/settingsControls.js';
 import type { SettingsPatch } from '../shared/settingsControls.js';
@@ -8,6 +9,7 @@ import { createSettings } from './settings.js';
 import { Simulator } from './simulator.js';
 
 export function createApp(input: Partial<SensorSettings> = {}) {
+  let interruptedUntil = 0;
   let settings = createSettings(input);
   const server = createServer((request, response) => {
     response.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,6 +18,18 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Content-Type', 'application/json');
     if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
+    if (request.url === '/api/faults') {
+      if (request.method === 'GET') { response.end(JSON.stringify(simulator.getFaultState())); return; }
+      if (request.method === 'POST') {
+        applyJson(request, response, (body) => {
+          const kind = (body as { kind?: unknown } | null)?.kind;
+          if (!isFaultKind(kind)) throw new Error('Unknown fault kind');
+          return simulator.triggerFault(kind);
+        });
+        return;
+      }
+      response.writeHead(405, { Allow: 'GET, POST' }); response.end(JSON.stringify({ error: 'Method not allowed' })); return;
+    }
     if (request.url === '/api/faults/bad-data') {
       if (request.method === 'GET') { response.end(JSON.stringify(simulator.getFaultState())); return; }
       if (request.method === 'POST') {
@@ -56,8 +70,11 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     response.writeHead(404);
     response.end(JSON.stringify({ error: 'Not found' }));
   });
-  const sockets = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
+  const sockets = new WebSocketServer({ server, path: '/ws', maxPayload: 1024, verifyClient: (_info, done) => {
+    if (performance.now() < interruptedUntil) done(false, 503, 'Stream unavailable'); else done(true);
+  } });
   function broadcast(message: ServerMessage) {
+    if (message.type === 'measurement' && performance.now() < interruptedUntil) return;
     const payload = JSON.stringify(message);
     for (const client of sockets.clients) {
       if (client.readyState !== WebSocket.OPEN) continue;
@@ -76,7 +93,10 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     client.send(JSON.stringify({ type: 'settings', data: settings } satisfies ServerMessage));
     client.send(JSON.stringify({ type: 'faults', data: simulator.getFaultState() } satisfies ServerMessage));
   });
-  const simulator = new Simulator(settings, (data) => broadcast({ type: 'measurement', data }), (data) => broadcast({ type: 'faults', data }));
+  const simulator = new Simulator(settings, (data) => broadcast({ type: 'measurement', data }), (data) => broadcast({ type: 'faults', data }), (durationMs) => {
+    interruptedUntil = performance.now() + durationMs;
+    for (const client of sockets.clients) client.close(1012, 'Stream temporarily unavailable');
+  });
   let motionTimer: ReturnType<typeof setInterval> | undefined;
   let closing: Promise<void> | undefined;
   return {
