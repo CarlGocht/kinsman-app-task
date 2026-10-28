@@ -1,3 +1,4 @@
+import { positionWindow } from './weightedPosition';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Measurement, MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
 
@@ -8,6 +9,7 @@ export function useSensor() {
   const [settingsError, setSettingsError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [estimationHistory, setEstimationHistory] = useState<Measurement[]>([]);
   const [history, setHistory] = useState<Measurement[]>([]);
   const [clients, setClients] = useState<number | null>(null);
   const [streamError, setStreamError] = useState('');
@@ -46,6 +48,7 @@ export function useSensor() {
         setConnection('Connected');
         setStreamError('');
         setMotion(null);
+        setEstimationHistory([]);
         setHistory([]); // A server restart can reset sequence IDs; start a fresh connection history.
         void refresh();
       };
@@ -54,7 +57,10 @@ export function useSensor() {
         try {
           const message = JSON.parse(event.data) as ServerMessage;
           if (message.type === 'motion') setMotion({ state: message.data, receivedAt: performance.now() });
-          if (message.type === 'measurement') setHistory((previous) => [message.data, ...previous].slice(0, 50));
+          if (message.type === 'measurement') {
+            setHistory((previous) => [message.data, ...previous].slice(0, 50));
+            setEstimationHistory((previous) => positionWindow([message.data, ...previous]));
+          }
           if (message.type === 'status') setClients(message.data.connectedClients);
         } catch {
           setStreamError('Unable to read a server message.');
@@ -78,5 +84,5 @@ export function useSensor() {
     };
   }, [refresh]);
 
-  return { motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { estimationHistory, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }

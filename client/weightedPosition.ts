@@ -8,9 +8,28 @@ export interface WeightedPosition {
   sources: { sequentialId: number; uniqueId: string; weight: number }[];
 }
 
-// Input is newest first. This estimates a local position from the last three readings.
+export const POSITION_WINDOW_MS = 3000;
+
+// Event-time window: (newest sample time - 3 seconds, newest sample time].
+// Arrival order and display-history limits do not determine the estimate.
+export function positionWindow(history: readonly Measurement[]): Measurement[] {
+  const timestamped = history.map((sample) => ({ sample, time: Date.parse(sample.timeAtSample) }))
+    .filter(({ time }) => Number.isFinite(time));
+  if (!timestamped.length) return [];
+  const end = timestamped.reduce((latest, { time }) => Math.max(latest, time), -Infinity);
+  const seen = new Set<string>();
+  return timestamped.filter(({ time }) => time > end - POSITION_WINDOW_MS)
+    .sort((a, b) => b.time - a.time || b.sample.sequentialId - a.sample.sequentialId || a.sample.uniqueId.localeCompare(b.sample.uniqueId))
+    .filter(({ sample }) => {
+      if (seen.has(sample.uniqueId)) return false;
+      seen.add(sample.uniqueId);
+      return true;
+    }).map(({ sample }) => sample);
+}
+
+// Uses every distinct measurement in the latest three seconds of sample time.
 export function weightedPosition(history: readonly Measurement[]): WeightedPosition | null {
-  const samples = history.slice(0, 3);
+  const samples = positionWindow(history);
   if (!samples.length) return null;
   if (samples.some((sample) => !Number.isFinite(sample.accuracyMeters) || sample.accuracyMeters <= 0
     || !Number.isFinite(sample.latitude) || Math.abs(sample.latitude) > 90
