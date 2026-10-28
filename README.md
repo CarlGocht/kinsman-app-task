@@ -1,6 +1,74 @@
 # Kinsman App
 
-Starter repository for the Kinsman app.
+A local location-sensor simulator with a Node.js/TypeScript server and a React/TypeScript browser client. The initial phase establishes a healthy sensor data stream and a working client/server setup.
+
+## Scope
+
+- Simulate a single, precise location sensor following a repeatable route.
+- Generate one measurement per second initially.
+- Stream measurements to the browser over WebSocket.
+- Show live measurements and recent sample history in a dashboard.
+- Run the server in a terminal and the client as a webpage on localhost.
+- Keep recent history in memory.
+
+Deployment setup, fault injection, and fault detection are deferred until the healthy stream and client/server setup work.
+
+## Components
+
+### Simulator server
+
+Use Node.js and TypeScript to generate the route and sensor measurements. Each measurement includes position, velocity, accuracy, timestamps, and identifiers. The server accepts browser WebSocket connections and reports connection and simulation status.
+
+### WebSocket stream
+
+Send sensor measurements from the server to the client. Keep sensor messages separate from connection and simulation status messages. Define shared TypeScript message types so both components use the same contract.
+
+### Browser client
+
+Use React and TypeScript to display connection status, current coordinates, velocity, accuracy, timestamps, identifiers, and recent sample history.
+
+## Planned measurement format
+
+The following is the planned data contract, not an implemented API:
+
+```ts
+{
+  sensorId: string;
+  uniqueId: string;
+  sequentialId: number;
+  latitude: number;
+  longitude: number;
+  timeAtSample: string;
+  timeAtSend: string;
+  accuracyMeters: number;
+  velocityData: {
+    speedMetersPerSecond: number;
+    headingDegrees: number;
+  };
+}
+```
+
+| Field | Convention |
+| --- | --- |
+| `sensorId` | Fixed identifier for the app's single sensor. |
+| `uniqueId` | UUID identifying a measurement. Any later retransmission of that measurement retains this ID, allowing duplicate sends to be identified in a future phase. |
+| `sequentialId` | Increases for each new measurement, starting at `1` when the server starts. |
+| `latitude`, `longitude` | Coordinates in decimal degrees, retaining sufficient precision for centimeter-scale movement. |
+| `timeAtSample` | UTC ISO 8601 timestamp for when the measurement was generated. |
+| `timeAtSend` | UTC ISO 8601 timestamp for each transmission of the measurement. |
+| `accuracyMeters` | Estimated horizontal accuracy expressed in meters, at centimeter scale. Start with a constant `0.02` (two centimeters). |
+| `velocityData.speedMetersPerSecond` | Speed in meters per second. |
+| `velocityData.headingDegrees` | Direction of travel in degrees clockwise from north. |
+
+The client can also record its local receive time separately from the transmitted measurement.
+
+## Implementation plan
+
+1. **Project setup:** establish the Node.js/TypeScript server, React/TypeScript client, and shared message types.
+2. **Healthy simulator:** generate one repeatable route at one sample per second, including position, velocity, and measurement metadata.
+3. **WebSocket connection:** stream measurements and report connection and simulation status.
+4. **Client dashboard:** show current measurement details and recent sample history.
+5. **Local workflow:** document commands to start both components and verify continuous delivery of measurements.
 
 ## Getting started
 
@@ -9,9 +77,8 @@ git clone https://github.com/CarlGocht/kinsman-app-task.git kinsman-app
 cd kinsman-app
 ```
 
-The application stack and setup instructions will be added as development begins.
+Application installation, development, and testing commands will be documented as implementation begins. No application code has been added yet.
 
 ## Development
 
-- Keep secrets in local environment files, which are ignored by Git.
-- Document installation, development, and testing commands here as they are added.
+Keep secrets in local environment files, which are ignored by Git.
