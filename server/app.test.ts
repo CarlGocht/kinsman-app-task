@@ -1,3 +1,4 @@
+import { distanceMeters } from '../shared/geo.js';
 import { once } from 'node:events';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -163,6 +164,62 @@ describe('local API', () => {
     expect(peer.messages.filter((message) => message.type === 'settings')).toEqual([{ type: 'settings', data: original }]);
     expect(await (await fetch(url)).json()).toEqual(original);
   });
+  it('delays a one-shot position fault and synchronizes all connected clients', async () => {
+    const app = createApp({ seed: 42, sampleIntervalMs: 100, sampleJitterMs: 0, sendDelayMaxMs: 0, positionRadiusMeters: 0 });
+    apps.push(app);
+    const port = await app.listen(0);
+    const first = await connect(port), second = await connect(port);
+    const url = `http://127.0.0.1:${port}/api/faults/bad-data`;
+    expect(await (await fetch(url)).json()).toMatchObject({ pending: false, lastInjected: null });
+    const armedResponse = await fetch(url, { method: 'POST' });
+    expect(armedResponse.status).toBe(200);
+    const armed = await armedResponse.json();
+    expect(armed).toMatchObject({ pending: true, delayMs: 3000, targetSequentialId: null, offsetMeters: 50, headingDegrees: 90 });
+    const applied = await new Promise<{ sequentialId: number }>((resolve, reject) => {
+      const timeout = setTimeout(() => { first.client.off('message', receive); reject(new Error('Fault not applied')); }, 4200);
+      function receive(data: Buffer) {
+        const message = JSON.parse(data.toString()) as ServerMessage;
+        if (message.type === 'faults' && message.data.lastInjected) {
+          clearTimeout(timeout); first.client.off('message', receive); resolve(message.data.lastInjected);
+        }
+      }
+      first.client.on('message', receive);
+    });
+    await Promise.all([waitForMeasurements(first.client, 2), waitForMeasurements(second.client, 2)]);
+    for (const peer of [first, second]) {
+      const samples = peer.messages.filter((message) => message.type === 'measurement').map((message) => message.data);
+      const injected = samples.find((sample) => sample.sequentialId === applied.sequentialId)!;
+      expect(distanceMeters(app.settings, injected)).toBeCloseTo(50, 5);
+      expect(Date.parse(injected.timeAtSample)).toBeGreaterThanOrEqual(Date.parse(armed.eligibleAt));
+      for (const sample of samples.filter((sample) => sample !== injected)) expect(distanceMeters(app.settings, sample)).toBeLessThan(1e-6);
+      expect(peer.messages).toContainEqual({ type: 'faults', data: armed });
+    }
+    expect(await (await fetch(url)).json()).toMatchObject({ pending: false, lastInjected: { sequentialId: applied.sequentialId } });
+    expect((await fetch(url, { method: 'DELETE' })).status).toBe(405);
+  });
+  it('validates the scenario selector API', async () => {
+    const { port } = await setup();
+    const url = `http://127.0.0.1:${port}/api/faults`;
+    for (const body of ['null', '{}', '{"kind":"unknown"}']) expect((await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })).status).toBe(400);
+    expect((await fetch(url, { method: 'DELETE' })).status).toBe(405);
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"kind":"duplicate"}' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ pending: true, kind: 'duplicate' });
+  });
+  it('closes real sockets, rejects reconnects during interruption, then restores streaming', async () => {
+    const { port } = await setup();
+    const { client } = await connect(port);
+    const closed = once(client, 'close');
+    const response = await fetch(`http://127.0.0.1:${port}/api/faults`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"kind":"connection-interruption"}' });
+    expect(response.status).toBe(200);
+    await closed;
+    const rejected = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    clients.push(rejected);
+    await expect(once(rejected, 'open')).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 4100));
+    const restored = await connect(port);
+    expect((await waitForMeasurements(restored.client, 1))[0].sequentialId).toBeGreaterThan(1);
+  }, 12000);
   it('rejects WebSocket upgrades outside /ws', async () => {
     const { port } = await setup();
     const client = new WebSocket(`ws://127.0.0.1:${port}/other`);

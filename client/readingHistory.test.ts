@@ -39,7 +39,7 @@ describe('paired raw and weighted reading history', () => {
     expect(state.pairs[0].weighted!.sources).toHaveLength(100);
     expect(state.pairs.at(-1)!.raw.sequentialId).toBe(50);
     expect(state.pairs.at(-1)!.weighted!.sources).toHaveLength(51);
-    expect(emptyReadingHistory()).toEqual({ pairs: [], window: [], retained: [], predictions: [] });
+    expect(emptyReadingHistory()).toEqual({ pairs: [], window: [], retained: [], predictions: [], detections: [] });
   });
   it('preserves raw data when its estimate is unavailable', () => {
     const raw = { ...sample(1, 0), accuracyMeters: 0 };
@@ -67,5 +67,47 @@ describe('changing historical lookback', () => {
     expect(state.window).toHaveLength(1);
     expect(state.retained).toHaveLength(6);
     expect(state.pairs[0].weighted!.windowMs).toBe(500);
+  });
+});
+
+describe('independent position anomaly detection', () => {
+  it('logs misses against saved forecasts once without consulting injector metadata', () => {
+    let state = appendReading(emptyReadingHistory(), sample(1, 0));
+    state = appendReading(state, sample(2, 1000));
+    const anomaly = sample(3, 2000, 43.601);
+    state = appendReading(state, anomaly);
+    expect(state.detections).toHaveLength(1);
+    expect(state.detections[0]).toMatchObject({ sampleId: anomaly.uniqueId, sequentialId: 3, reason: 'outside-prediction-area' });
+    expect(state.detections[0].errorMeters).toBeGreaterThan(state.detections[0].radiusMeters!);
+    const detection = state.detections[0];
+    state = appendReading(state, anomaly);
+    expect(state.detections).toHaveLength(1);
+    expect(state.detections[0]).toBe(detection);
+  });
+  it('does not flag normal readings or readings without a matching saved forecast', () => {
+    let state = appendReading(emptyReadingHistory(), sample(1, 0));
+    state = appendReading(state, sample(2, 1000));
+    state = appendReading(state, sample(3, 2000));
+    state = appendReading(state, sample(4, 10000, 43.601));
+    expect(state.detections).toEqual([]);
+    expect(emptyReadingHistory().detections).toEqual([]);
+  });
+});
+
+describe('prediction recovery after a detected anomaly', () => {
+  it('retains bad data for review while preventing it from poisoning the next forecast', () => {
+    let state = appendReading(emptyReadingHistory(), sample(1, 0));
+    state = appendReading(state, sample(2, 1000));
+    const bad = sample(3, 2000, 43.601);
+    state = appendReading(state, bad);
+    expect(state.detections).toHaveLength(1);
+    expect(state.predictions.some((saved) => saved.prediction.sourceIds.includes(bad.uniqueId))).toBe(false);
+    state = appendReading(state, sample(4, 3000));
+    expect(state.pairs[0].predictionEvaluation).toBeNull();
+    expect(state.predictions[0].prediction.sourceIds).not.toContain(bad.uniqueId);
+    state = appendReading(state, sample(5, 4000));
+    expect(state.detections).toHaveLength(1);
+    expect(state.pairs.find((pair) => pair.raw.uniqueId === bad.uniqueId)).toBeDefined();
+    expect(state.pairs[0].weighted!.sources.some((source) => source.uniqueId === bad.uniqueId)).toBe(true);
   });
 });

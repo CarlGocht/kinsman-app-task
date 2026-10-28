@@ -11,7 +11,7 @@ A local location-sensor simulator with a Node.js/TypeScript server and a React/T
 - Run the server in a terminal and the client as a webpage on localhost.
 - Keep recent history in memory.
 
-Deployment setup, fault injection, and fault detection are deferred until the healthy stream and client/server setup work.
+Deployment setup and broader fault classification remain deferred; the client now flags prediction-area anomalies. A selectable catalog of bounded sensor and transport faults is available for exercising stream validation and detection.
 
 ## Components
 
@@ -56,7 +56,7 @@ Initial defaults (configurable):
 
 Record `timeAtSample` and `timeAtSend` from the actual clock at measurement generation and transmission. Timing jitter comes from scheduling, rather than altering timestamps; send time must not precede sample time. Operating-system scheduling may add extra delay beyond the configured jitter.
 
-Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Noise levels can be adjusted at runtime; explicit fault injection and detection remain future work.
+Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Noise levels can be adjusted at runtime; a one-shot position fault is available; additional fault scenarios and automatic classification remain future work.
 
 ## Server tests
 
@@ -74,7 +74,7 @@ Tests cover:
 - **Avatar timing:** independent motion streaming with a slow sample interval, frame projection between readings, stopped states, and lease-limited extrapolation.
 - **Lifecycle:** clean shutdown closes connections and stops sampling timers.
 
-These tests cover normal server behavior only; sensor fault injection and detection remain deferred.
+Tests cover normal behavior and the one-shot position injector; broader fault detection remains future work.
 
 ## Measurement format
 
@@ -280,3 +280,30 @@ Applying timing settings restarts the sampling countdown while preserving motion
 **History weighting window** in Sensor controls sets the lookback from 0.5 to 30 seconds (default 3). Apply it like the other settings; it syncs across clients and affects weighting, historical accuracy comparison, and trajectory fits on subsequent readings. Each weighted snapshot and forecast records its actual window length, so historical labels remain correct after changes. Existing saved estimates, bands, forecasts, and evaluations are not rewritten.
 
 The client retains up to 30 seconds of raw sample-time data independently of the selected lookback and 50 displayed pairs. Increasing the window can immediately draw on that retained data at the next reading; data from before connection cannot be recovered. Shrinking it excludes older points from new estimates while keeping the retention buffer available for later expansion. The gentle recency half-life remains 3 seconds, independently of lookback length. Changing only history or noise settings preserves sampling cadence; timing controls reschedule it. `HISTORY_WINDOW_SECONDS` sets the startup default.
+
+## Fault scenarios and sensor-only detection
+
+Choose a scenario in the dropdown beside the map, then click **Trigger selected fault**. Every scenario starts after a three-second server-controlled countdown and finishes automatically. One pending/active scenario is allowed at a time; repeat triggers neither stack nor restart it. Scenarios affect reported sensor data/transport while true motion and the avatar remain unchanged.
+
+| Scenario | Injection | Detection evidence |
+| --- | --- | --- |
+| Position jump | One reading shifted 50 m east | Miss against a previously saved prediction area |
+| Missing points | Drop three generated readings, keep sequence increments | Missing valid sequence IDs after a reorder grace period; possibly an observed time gap |
+| Excessive interval | Pause generation for at least 3 s or four intervals | Learned cadence / measurement-arrival timeout; sequence remains consecutive |
+| Duplicate | Deliver one measurement twice with the same unique ID | Repeated measurement ID; rejected from estimation |
+| Out of order | Deliver a held reading immediately after its successor | Sequence/sample-time regression; a grace period avoids calling the swapped pair permanently missing |
+| Frozen position | Hold coordinates for at least 8 s / eight intervals | Repeated coordinates despite raw `velocityData.speedMetersPerSecond` above 0.2 m/s; not distinguishable at rest |
+| Gradual drift | Ramp eastward at 1 m/s for at least 12 s / eight intervals, then recover | Persistent directional displacement-versus-reported-velocity disagreement; suspected drift or velocity bias |
+| Excessive noise | Alternate 20 m position errors for at least 8 s / eight intervals | Inconsistent residual jumps exceeding reported accuracy |
+| Malformed fields | One frame with invalid latitude, accuracy, and speed | Schema/range validation; rejected payload available in the log |
+| Connection interruption | Close WebSockets and refuse reconnects for 4 s | Observed socket closure; automatic reconnect resumes afterward |
+
+`POST /api/faults` accepts JSON `{ "kind": "duplicate" }`; kind names are defined in `shared/faults.ts`. `GET /api/faults` returns queued/active status and last-applied sample metadata. The older `/api/faults/bad-data` endpoint remains a compatibility alias for the position jump. Separate `faults` messages drive injector controls only. Sensor payloads carry no fault tags.
+
+Detection has an explicit data boundary: `SensorDetector.observe` accepts only raw measurement payloads and local receipt timing; its watchdog observes measurement silence and the socket-close handler observes transport failure. It does not read keyboard commands, avatar motion, injector kind/status, or simulator settings. It learns cadence from sample timestamps. Existing prediction checks use models saved before the new sensor reading; no input/motion oracle helps classify faults.
+
+Malformed payloads are checked before any map/math/table code sees them, and duplicates are excluded from estimation. Schema errors, sequence anomalies, time gaps, and socket closures are labeled **observed** evidence; positional, freeze, drift, and noise inference is labeled **suspected**. The latest 50 detections are retained across reconnects until page reload, while stream baselines/history reset for the new connection. Invalid payload details can be expanded in the list.
+
+Limits: a stationary frozen sensor cannot be reliably distinguished from a genuinely stationary sensor. Drift accompanied by matching reported velocity can look like real motion and may be undetectable. Persistent inconsistency can also be caused by velocity bias, legitimate acceleration/turning, or large configured noise. Intentional sample-rate changes can generate cadence observations until the learned baseline adapts; the detector deliberately does not consult the slider settings to suppress them. These rules are diagnostic heuristics, not guaranteed fault classification.
+
+Predicted-area outliers remain visible in raw/weighted history but are excluded from new prediction fits. The rejected sample does not issue a new forecast, allowing a subsequent clean reading to resume prediction without cascading recovery alerts. Other observed stream issues do not automatically quarantine valid coordinates. Settings changes preserve countdowns and active sampling pauses; shutdown clears the scenario and timers.
