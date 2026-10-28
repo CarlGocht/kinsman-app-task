@@ -2,6 +2,14 @@ import type { Measurement } from '../shared/protocol.js';
 import { destination, distanceMeters } from '../shared/geo.js';
 import { positionWindow, weightedPosition } from './weightedPosition.js';
 
+// Initial process-model assumptions; these are not calibrated confidence bounds.
+export const PREDICTION_ASSUMPTIONS = Object.freeze({
+  speedFraction: 0.05,
+  minimumSpeedUncertaintyMetersPerSecond: 0.05,
+  headingUncertaintyDegrees: 2,
+  accelerationUncertaintyMetersPerSecondSquared: 2,
+});
+
 export interface Prediction {
   id: string;
   createdAt: string;
@@ -16,6 +24,9 @@ export interface Prediction {
   northMetersPerSecond: number;
   baseRadiusMeters: number;
   radiusGrowthMetersPerSecond: number;
+  velocityUncertaintyFloorMetersPerSecond: number;
+  accelerationUncertaintyMetersPerSecondSquared: number;
+  timingUncertaintyMeters: number;
   latitude: number;
   longitude: number;
   radiusMeters: number;
@@ -39,14 +50,16 @@ export function predictionAt(prediction: Prediction, time: number) {
   const heading = Math.atan2(prediction.eastMetersPerSecond, prediction.northMetersPerSecond) * 180 / Math.PI;
   return {
     ...destination(prediction.baseLatitude, prediction.baseLongitude, heading, speed * seconds),
-    radiusMeters: prediction.baseRadiusMeters + prediction.radiusGrowthMetersPerSecond * seconds,
+    radiusMeters: prediction.baseRadiusMeters + prediction.timingUncertaintyMeters
+      + prediction.radiusGrowthMetersPerSecond * seconds
+      + 0.5 * prediction.accelerationUncertaintyMetersPerSecondSquared * seconds ** 2,
   };
 }
 
 export function createPrediction(history: readonly Measurement[], intervalMs: number, jitterMs = 0, createdAt = new Date().toISOString()): Prediction | null {
   const samples = positionWindow(history);
   const weighted = weightedPosition(samples);
-  if (!weighted || samples.length < 2 || !Number.isFinite(intervalMs) || intervalMs <= 0) return null;
+  if (!weighted || samples.length < 2 || !Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(jitterMs) || jitterMs < 0) return null;
   const anchor = samples[0];
   const baseTime = Date.parse(anchor.timeAtSample);
   const metersPerDegree = Math.PI / 180 * 6371008.8;
@@ -77,6 +90,15 @@ export function createPrediction(history: readonly Measurement[], intervalMs: nu
   }, 0) / reportedWeight) : 0;
   const span = Math.max(0.001, -Math.min(...points.map((p) => p.t)));
   const expectedAccuracy = points.reduce((sum, p) => sum + p.weight * p.sample.accuracyMeters, 0);
+  const speed = Math.hypot(eastVelocity, northVelocity);
+  const assumptions = PREDICTION_ASSUMPTIONS;
+  const velocityFloor = Math.hypot(
+    Math.max(assumptions.minimumSpeedUncertaintyMetersPerSecond, speed * assumptions.speedFraction),
+    speed * Math.sin(assumptions.headingUncertaintyDegrees * Math.PI / 180),
+  );
+  // Measurement uncertainty still affects slope precision even if two points fit exactly.
+  const slopeUncertainty = Math.sqrt(points.reduce((sum, p) => sum
+    + (p.weight * (p.t - mean.t) * p.sample.accuracyMeters) ** 2, 0)) / variance;
   const prediction: Prediction = {
     id: anchor.uniqueId, createdAt, sourceIds: samples.map((p) => p.uniqueId), sourceSequenceIds: samples.map((p) => p.sequentialId),
     baseTime: anchor.timeAtSample, targetTime: new Date(baseTime + intervalMs).toISOString(),
@@ -84,7 +106,10 @@ export function createPrediction(history: readonly Measurement[], intervalMs: nu
     baseLatitude: origin.latitude, baseLongitude: origin.longitude,
     eastMetersPerSecond: eastVelocity, northMetersPerSecond: northVelocity,
     baseRadiusMeters: 2 * (expectedAccuracy + scatter),
-    radiusGrowthMetersPerSecond: Math.max(0.01, velocityDisagreement + scatter / span),
+    radiusGrowthMetersPerSecond: Math.hypot(velocityDisagreement, scatter / span, 2 * slopeUncertainty, velocityFloor),
+    velocityUncertaintyFloorMetersPerSecond: velocityFloor,
+    accelerationUncertaintyMetersPerSecondSquared: assumptions.accelerationUncertaintyMetersPerSecondSquared,
+    timingUncertaintyMeters: speed * jitterMs / 1000,
     latitude: 0, longitude: 0, radiusMeters: 0,
   };
   return { ...prediction, ...predictionAt(prediction, baseTime + intervalMs) };

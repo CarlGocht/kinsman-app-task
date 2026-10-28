@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPrediction, evaluatePrediction, predictionAt } from './prediction.js';
+import { createPrediction, evaluatePrediction, predictionAt, PREDICTION_ASSUMPTIONS } from './prediction.js';
 import { appendReading, emptyReadingHistory } from './readingHistory.js';
 import { destination, distanceMeters } from '../shared/geo.js';
 import type { Measurement } from '../shared/protocol.js';
@@ -87,5 +87,32 @@ describe('saved constant-velocity area predictions', () => {
     state = appendReading(state, sample(2, 1000, 20), null);
     expect(state.predictions).toEqual([]);
     expect(emptyReadingHistory().predictions).toEqual([]);
+  });
+});
+
+describe('future motion uncertainty', () => {
+  it('does not collapse to centimeters for perfectly straight 20 m/s travel', () => {
+    const prediction = createPrediction(history, 1000, 10)!;
+    expect(prediction.velocityUncertaintyFloorMetersPerSecond).toBeGreaterThan(1);
+    expect(prediction.radiusMeters).toBeGreaterThan(2);
+    expect(prediction.timingUncertaintyMeters).toBeCloseTo(0.2, 4);
+    expect(prediction.accelerationUncertaintyMetersPerSecondSquared).toBe(PREDICTION_ASSUMPTIONS.accelerationUncertaintyMetersPerSecondSquared);
+  });
+  it('widens with speed even when trajectory and reported velocity agree perfectly', () => {
+    const fast = history.map((s, index) => ({ ...s, ...destination(43.6, -72.2, 90, (2 - index) * 40), velocityData: { speedMetersPerSecond: 40, headingDegrees: 90 } }));
+    expect(createPrediction(fast, 1000)!.radiusMeters).toBeGreaterThan(createPrediction(history, 1000)!.radiusMeters + 1);
+  });
+  it('grows quadratically with forecast duration because future acceleration is unknown', () => {
+    const prediction = createPrediction(history, 1000)!;
+    const base = Date.parse(prediction.baseTime);
+    const r0 = predictionAt(prediction, base).radiusMeters;
+    const r1 = predictionAt(prediction, base + 1000).radiusMeters;
+    const r2 = predictionAt(prediction, base + 2000).radiusMeters;
+    expect(r2 - 2 * r1 + r0).toBeCloseTo(prediction.accelerationUncertaintyMetersPerSecondSquared, 10);
+  });
+  it('retains slope uncertainty from reported position accuracy with an exact two-point fit', () => {
+    const precise = history.slice(0, 2);
+    const uncertain = precise.map((s) => ({ ...s, accuracyMeters: 2 }));
+    expect(createPrediction(uncertain, 1000)!.radiusGrowthMetersPerSecond).toBeGreaterThan(createPrediction(precise, 1000)!.radiusGrowthMetersPerSecond);
   });
 });
