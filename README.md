@@ -29,7 +29,7 @@ Use React and TypeScript to display connection status, current coordinates, velo
 
 ## API and settings
 
-- **WebSocket `/ws`:** stream sensor measurements and separate simulation status messages to connected clients.
+- **WebSocket `/ws`:** stream raw sensor measurements at the configured sample interval, independent ground-truth `motion` snapshots every 50 ms (20 Hz), and simulation status messages to connected clients.
 - **HTTP `GET /api/settings`:** return the effective settings currently used by the running simulator, so the client can display them for debugging.
 - **Central configuration:** define `sampleIntervalMs` with a default of `1000` (one sample per second), plus `sensorId`, the fixed base coordinates, nominal `accuracyMeters`, a random seed, and the jitter limits below. Allow startup configuration overrides so changing the interval does not require editing the sampling loop. Validate settings before starting.
 - **Client settings display:** fetch settings on connection and reconnection, and provide a refresh action to retrieve the current values. The sampling loop and settings endpoint must use the same configuration source.
@@ -71,6 +71,7 @@ Tests cover:
 - **Settings endpoint:** successful JSON response containing the effective configuration, including overridden values matching the simulator's behavior.
 - **WebSocket delivery:** valid serialized samples arriving in order, multiple clients receiving the same measurement IDs, and a disconnected client not interrupting other clients.
 - **Movement:** cardinal and diagonal directions, constant total speed, turning/stopping at command times, lease refresh/expiry, input validation, and streamed positions/velocity.
+- **Avatar timing:** independent motion streaming with a slow sample interval, frame projection between readings, stopped states, and lease-limited extrapolation.
 - **Lifecycle:** clean shutdown closes connections and stops sampling timers.
 
 These tests cover normal server behavior only; sensor fault injection and detection remain deferred.
@@ -140,7 +141,7 @@ npm run dev:client
 
 Open [the sensor monitor](http://127.0.0.1:5173/). It displays an OpenStreetMap view with a dot at the latest received sensor coordinates, all effective settings, the latest full measurement payload, and a rolling table of the most recent 50 samples. Settings load initially and whenever the stream reconnects; use **Refresh settings** to fetch them manually. The client automatically retries disconnected streams every two seconds and starts a fresh history after reconnecting. Last received data remains visible while disconnected.
 
-The map uses Leaflet and OpenStreetMap tiles with visible attribution. Map tiles require an internet connection; the sensor stream remains local. The dot updates without resetting manual pan/zoom; **Center on sensor** returns to the latest position. While disconnected, the last received position is retained and labeled. Centimeter-scale jitter is not visibly distinguishable at street-map zoom.
+The map uses Leaflet and OpenStreetMap tiles with visible attribution. Map tiles require an internet connection; the sensor stream remains local. The avatar animates independently while raw dots update on sensor samples, without resetting manual pan/zoom; **Center on sensor** returns to the latest position. While disconnected, the last received position is retained and labeled. Centimeter-scale jitter is not visibly distinguishable at street-map zoom.
 
 The Vite development server proxies `/api` and `/ws` to the sensor server. If you change its port, set the proxy target when starting the client, for example `SENSOR_SERVER_URL=http://127.0.0.1:4001 npm run dev:client`. The client runs locally without a deployment setup.
 
@@ -159,7 +160,7 @@ sensor.onmessage = (event) => console.log(JSON.parse(event.data));
 // sensor.close();
 ```
 
-WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }` or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Status messages are sent on connection and disconnection. Settings are read-only; movement controls are described below. The API supports cross-origin local browser requests, including JSON preflight requests.
+WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }`, `{ type: "motion", data: movementState }`, or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Motion snapshots are simulation ground truth for visualization, not sensor measurements; they do not consume sample IDs or add to raw history. Status messages are sent on connection and disconnection. Settings are read-only; movement controls are described below. The API supports cross-origin local browser requests, including JSON preflight requests.
 
 ### Movement API and map controls
 
@@ -171,7 +172,7 @@ Click the map or Tab to focus it, then hold arrow keys: up is north, right is ea
 
 There is one shared sensor: the latest accepted command from any client wins. Movement is integrated up to each command, sample, or state read; command expiry is honored even if it falls between samples. Releasing a key stops ground truth immediately, while the next scheduled measurement reports the change. Very short movements between samples may only appear as displacement in the next sample.
 
-The taller map shows the latest raw sample as a green dot, previous raw samples as blue dots with sample/time/coordinate tooltips, and a line connecting them chronologically. History is limited to the current connection's last 50 samples and is cleared on reconnect. A heading arrow follows reported movement above the frontend speed threshold. Manual panning/zooming is preserved; use **Center on sensor** to return to the current location.
+The taller map separates the green live avatar from blue raw sensor points. The avatar and its travel-direction arrow follow server ground truth independently of the sensor sample interval, rendered with `requestAnimationFrame` and projected between 20 Hz motion snapshots. Projection is capped at the command lease, and the avatar is removed while disconnected. The raw points and chronological line update only on sensor measurements; history is limited to the current connection's last 50 samples and is cleared on reconnect. Manual panning/zooming is preserved; use **Center on sensor** to return to the current location.
 
 ### Startup configuration
 
@@ -221,4 +222,4 @@ Keep secrets in local environment files, which are ignored by Git.
 
 ## Velocity interpretation
 
-The server always reports numeric raw speed and heading. Stationary speed retains small noise; stationary heading retains the last direction (initially north) with jitter and has no meaningful travel interpretation. The client hides the travel arrow at reported speeds of 0.01 m/s or less; the raw payload and table remain unchanged. A future model may derive speed and heading noise from east/north velocity components.
+The server always reports numeric raw speed and heading. Stationary speed retains small noise; stationary heading retains the last direction (initially north) with jitter and has no meaningful travel interpretation. The live avatar arrow uses simulation movement direction and disappears when ground truth stops; the raw payload and table continue showing noisy sensor readings unchanged. A future model may derive speed and heading noise from east/north velocity components.

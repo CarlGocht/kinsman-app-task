@@ -23,7 +23,7 @@ export function App() {
       <section><p className="label">REPORTED ACCURACY</p><strong>{latest ? `${(latest.accuracyMeters * 100).toFixed(2)} cm` : '—'}</strong><small>Centimeter-scale measurement</small></section>
       <section><p className="label">REPORTED SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Reported speed with measurement jitter</small></section>
     </div>
-    <LocationMap history={sensor.history} connected={sensor.connection === 'Connected'} />
+    <LocationMap motion={sensor.motion} history={sensor.history} connected={sensor.connection === 'Connected'} />
     <div className="columns">
       <section className="panel">
         <div className="panel-head"><div><p className="eyebrow">CONFIGURATION</p><h2>Current settings</h2></div><button onClick={() => void sensor.refresh()} disabled={sensor.refreshing}>{sensor.refreshing ? 'Refreshing…' : 'Refresh settings'}</button></div>

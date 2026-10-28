@@ -1,3 +1,4 @@
+import { destination } from '../shared/geo.js';
 import type { MovementCommand, MovementState, SensorSettings } from '../shared/protocol.js';
 
 // Advance ground truth independently of measurement noise and sampling frequency.
@@ -16,14 +17,9 @@ export class Motion {
   private advance(now: number) {
     const seconds = Math.max(0, Math.min(now, this.expiresAt) - this.updatedAt) / 1000;
     if ((this.north || this.east) && seconds > 0) {
-      const distance = this.settings.movementSpeedMetersPerSecond * seconds / 6371008.8;
-      const bearing = this.heading * Math.PI / 180;
-      const lat = this.latitude * Math.PI / 180;
-      const lon = this.longitude * Math.PI / 180;
-      const nextLat = Math.asin(Math.sin(lat) * Math.cos(distance) + Math.cos(lat) * Math.sin(distance) * Math.cos(bearing));
-      const nextLon = lon + Math.atan2(Math.sin(bearing) * Math.sin(distance) * Math.cos(lat), Math.cos(distance) - Math.sin(lat) * Math.sin(nextLat));
-      this.latitude = nextLat * 180 / Math.PI;
-      this.longitude = ((nextLon * 180 / Math.PI + 540) % 360) - 180;
+      const point = destination(this.latitude, this.longitude, this.heading, this.settings.movementSpeedMetersPerSecond * seconds);
+      this.latitude = point.latitude;
+      this.longitude = point.longitude;
     }
     this.updatedAt = now;
     if (now >= this.expiresAt) { this.north = 0; this.east = 0; }

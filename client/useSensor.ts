@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Measurement, SensorSettings, ServerMessage } from '../shared/protocol';
+import type { Measurement, MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
 
 export function useSensor() {
+  const [motion, setMotion] = useState<{ state: MovementState; receivedAt: number } | null>(null);
   const [connection, setConnection] = useState('Connecting');
   const [settings, setSettings] = useState<SensorSettings | null>(null);
   const [settingsError, setSettingsError] = useState('');
@@ -44,6 +45,7 @@ export function useSensor() {
         if (disposed) return;
         setConnection('Connected');
         setStreamError('');
+        setMotion(null);
         setHistory([]); // A server restart can reset sequence IDs; start a fresh connection history.
         void refresh();
       };
@@ -51,6 +53,7 @@ export function useSensor() {
         if (disposed) return;
         try {
           const message = JSON.parse(event.data) as ServerMessage;
+          if (message.type === 'motion') setMotion({ state: message.data, receivedAt: performance.now() });
           if (message.type === 'measurement') setHistory((previous) => [message.data, ...previous].slice(0, 50));
           if (message.type === 'status') setClients(message.data.connectedClients);
         } catch {
@@ -75,5 +78,5 @@ export function useSensor() {
     };
   }, [refresh]);
 
-  return { connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }

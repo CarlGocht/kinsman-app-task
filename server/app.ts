@@ -66,8 +66,10 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     client.on('error', () => client.terminate());
     client.on('close', status);
     status();
+    broadcast({ type: 'motion', data: simulator.getMovement() });
   });
   const simulator = new Simulator(settings, (data) => broadcast({ type: 'measurement', data }));
+  let motionTimer: ReturnType<typeof setInterval> | undefined;
   let closing: Promise<void> | undefined;
   return {
     settings,
@@ -77,12 +79,14 @@ export function createApp(input: Partial<SensorSettings> = {}) {
         server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); });
       });
       simulator.start();
+      motionTimer = setInterval(() => broadcast({ type: 'motion', data: simulator.getMovement() }), 50);
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Missing server address');
       return address.port;
     },
     close() {
       if (closing) return closing;
+      clearInterval(motionTimer);
       simulator.stop();
       for (const client of sockets.clients) client.terminate();
       closing = Promise.all([

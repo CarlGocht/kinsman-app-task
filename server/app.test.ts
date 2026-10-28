@@ -90,6 +90,31 @@ describe('local API', () => {
     expect(await stopped.json()).toMatchObject({ speedMetersPerSecond: 0 });
     expect(await (await fetch(url)).json()).toMatchObject({ north: 0, east: 0, expiresInMs: 0 });
   });
+  it('streams live motion independently of a slow sensor sample interval', async () => {
+    const app = createApp({ seed: 42, sampleIntervalMs: 10000 });
+    apps.push(app);
+    const port = await app.listen(0);
+    await fetch(`http://127.0.0.1:${port}/api/movement`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"north":0,"east":1}',
+    });
+    const client = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    clients.push(client);
+    const messages: ServerMessage[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Missing independent motion updates')), 2000);
+      client.on('error', reject);
+      client.on('message', (data) => {
+        const message = JSON.parse(data.toString()) as ServerMessage;
+        messages.push(message);
+        if (messages.filter((m) => m.type === 'motion').length === 4) { clearTimeout(timeout); resolve(); }
+      });
+    });
+    const motion = messages.filter((m) => m.type === 'motion');
+    expect(motion).toHaveLength(4);
+    expect(motion[3].data.longitude).toBeGreaterThan(motion[0].data.longitude);
+    expect(motion[0].data).toMatchObject({ speedMetersPerSecond: 5, headingDegrees: 90 });
+    expect(messages.some((m) => m.type === 'measurement')).toBe(false);
+  });
   it('rejects malformed movement commands and supports preflight', async () => {
     const { port } = await setup();
     const url = `http://127.0.0.1:${port}/api/movement`;

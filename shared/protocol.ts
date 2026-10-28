@@ -29,6 +29,7 @@ export interface Measurement {
 
 export type ServerMessage =
   | { type: 'measurement'; data: Measurement }
+  | { type: 'motion'; data: MovementState }
   | { type: 'status'; data: { simulation: 'running'; connectedClients: number } };
 
 export interface MovementCommand { north: number; east: number }
