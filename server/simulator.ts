@@ -20,6 +20,8 @@ export class Simulator {
   private sequence = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private running = false;
+  private sampleTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingSendUntil = 0;
   constructor(private settings: Readonly<SensorSettings>, private emit: (measurement: Measurement) => void) {
     this.random = seededRandom(settings.seed);
     this.motion = new Motion(settings);
@@ -30,11 +32,13 @@ export class Simulator {
       if (this.running) callback();
     }, delay);
     this.timers.add(timer);
+    return timer;
   }
-  private schedule() {
-    const s = this.settings;
-    const interval = s.sampleIntervalMs + (this.random() * 2 - 1) * s.sampleJitterMs;
-    this.later(() => {
+  private schedule(waitMs = 0) {
+    const interval = this.settings.sampleIntervalMs + (this.random() * 2 - 1) * this.settings.sampleJitterMs;
+    this.sampleTimer = this.later(() => {
+      this.sampleTimer = undefined;
+      const s = this.settings;
       const motion = this.motion.get();
       const timeAtSample = new Date().toISOString();
       const radius = Math.sqrt(this.random()) * s.positionRadiusMeters;
@@ -53,12 +57,24 @@ export class Simulator {
           headingDegrees: (motion.headingDegrees + (this.random() * 2 - 1) * s.headingJitterDegrees + 360) % 360,
         },
       };
+      const delay = this.random() * s.sendDelayMaxMs;
+      this.pendingSendUntil = performance.now() + delay;
       this.later(() => {
+        this.pendingSendUntil = 0;
         measurement.timeAtSend = new Date().toISOString();
         this.emit(measurement);
-      }, this.random() * s.sendDelayMaxMs);
+      }, delay);
       this.schedule();
-    }, interval);
+    }, waitMs + interval);
+  }
+  updateSettings(settings: Readonly<SensorSettings>) {
+    this.settings = settings;
+    if (this.sampleTimer !== undefined) {
+      clearTimeout(this.sampleTimer);
+      this.timers.delete(this.sampleTimer);
+      this.sampleTimer = undefined;
+    }
+    if (this.running) this.schedule(Math.max(0, this.pendingSendUntil - performance.now()));
   }
   setMovement(command: MovementCommand) { return this.motion.set(command); }
   getMovement() { return this.motion.get(); }
@@ -72,5 +88,7 @@ export class Simulator {
     this.motion.set({ north: 0, east: 0 });
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
+    this.sampleTimer = undefined;
+    this.pendingSendUntil = 0;
   }
 }

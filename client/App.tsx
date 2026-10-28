@@ -1,3 +1,4 @@
+import { SettingsControls } from './SettingsControls';
 import { Fragment } from 'react';
 import { useSensor } from './useSensor';
 import { LocationMap } from './LocationMap';
@@ -29,6 +30,7 @@ export function App() {
       <section><p className="label">REPORTED ACCURACY</p><strong>{latest ? `${(latest.accuracyMeters * 100).toFixed(2)} cm` : '—'}</strong><small>Centimeter-scale measurement</small></section>
       <section><p className="label">REPORTED SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Reported speed with measurement jitter</small></section>
     </div>
+    <SettingsControls settings={sensor.settings} connected={sensor.connection === 'Connected'} saving={sensor.savingSettings} error={sensor.settingsUpdateError} onApply={sensor.updateSettings} />
     {band && <section className="panel accuracy-summary" aria-label="Current accuracy band">
       <div className="panel-head"><div><p className="eyebrow">ACCURACY ESTIMATE · RAW #{latest.sequentialId}</p><h2>Estimated band radius: {band.radiusMeters.toFixed(3)} m</h2></div><span className="tag">{band.comparedSamples ? `${band.comparedSamples} prior samples` : 'Sensor only'}</span></div>
       <p className="footnote">Reported accuracy: {band.reportedAccuracyMeters.toFixed(3)} m · History disagreement: {band.disagreementMeters === null ? 'collecting history' : `${band.disagreementMeters.toFixed(3)} m`} · History spread: {band.historySpreadMeters === null ? '—' : `${band.historySpreadMeters.toFixed(3)} m`}</p>

@@ -34,13 +34,13 @@ Use React and TypeScript to display connection status, current coordinates, velo
 - **Central configuration:** define `sampleIntervalMs` with a default of `1000` (one sample per second), plus `sensorId`, the fixed base coordinates, nominal `accuracyMeters`, a random seed, and the jitter limits below. Allow startup configuration overrides so changing the interval does not require editing the sampling loop. Validate settings before starting.
 - **Client settings display:** fetch settings on connection and reconnection, and provide a refresh action to retrieve the current values. The sampling loop and settings endpoint must use the same configuration source.
 
-Settings are read-only through the API initially; runtime editing can be added later. Expose the effective random seed and all jitter settings through the settings endpoint for debugging.
+Sampling and noise settings can be changed at runtime through `PATCH /api/settings`. Effective values, including the seed, remain available through `GET /api/settings` and are pushed to connected clients in `settings` WebSocket messages. Identity, seed, base coordinates, and movement speed/timeout remain startup-only settings.
 
 ## Simulation and randomness
 
 Start stationary at one configurable base location. Movement commands update the server-owned ground truth using elapsed monotonic time, independently of sampling frequency. Add small, bounded noise around that current position so measurement noise never accumulates into drift.
 
-Use a seeded pseudorandom generator for simulation noise. Generate a seed at startup unless one is supplied, and expose it in settings so a run can be reproduced. Keep UUID generation separate. With the same seed, configuration, movement command timing, and controlled clock, tests should reproduce the same measurements and schedule.
+Use a seeded pseudorandom generator for simulation noise. Generate a seed at startup unless one is supplied, and expose it in settings so a run can be reproduced. Keep UUID generation separate. With the same seed, configuration, movement/settings command timing, and controlled clock, tests should reproduce the same measurements and schedule.
 
 Initial defaults (configurable):
 
@@ -56,7 +56,7 @@ Initial defaults (configurable):
 
 Record `timeAtSample` and `timeAtSend` from the actual clock at measurement generation and transmission. Timing jitter comes from scheduling, rather than altering timestamps; send time must not precede sample time. Operating-system scheduling may add extra delay beyond the configured jitter.
 
-Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Larger noise and faults remain future work.
+Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Noise levels can be adjusted at runtime; explicit fault injection and detection remain future work.
 
 ## Server tests
 
@@ -160,7 +160,7 @@ sensor.onmessage = (event) => console.log(JSON.parse(event.data));
 // sensor.close();
 ```
 
-WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }`, `{ type: "motion", data: movementState }`, or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Motion snapshots are simulation ground truth for visualization, not sensor measurements; they do not consume sample IDs or add to raw history. Status messages are sent on connection and disconnection. Settings are read-only; movement controls are described below. The API supports cross-origin local browser requests, including JSON preflight requests.
+WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }`, `{ type: "motion", data: movementState }`, `{ type: "settings", data: settings }`, or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Motion snapshots are simulation ground truth for visualization, not sensor measurements; they do not consume sample IDs or add to raw history. Status messages are sent on connection and disconnection. Live settings and movement controls are described below. The API supports cross-origin local browser requests, including JSON preflight requests.
 
 ### Movement API and map controls
 
@@ -251,3 +251,24 @@ On receiving a raw reading, the client first searches **previously saved** forec
 A teal map point and dashed real-scale circle display the next saved forecast. A summary shows its target, radius, creation time, source IDs, and latest result. The saved prediction table retains 50 forecasts/evaluations in memory per connection (20 displayed), with error, evaluated radius, and inside/outside status. Unmatched targets remain awaiting a matching reading rather than being classified as faults. Forecasts and evaluations reset on reconnect along with reading history; page reload does not persist them. The live avatar and raw/weighted trails retain their existing behavior.
 
 The map legend uses color/shape swatches with toggle buttons for the live avatar, raw readings, weighted readings, accuracy band, and prediction area. Buttons expose their state with `aria-pressed` and can be used with the keyboard. Hiding a layer preserves streaming, computations, and history; it stays hidden across new ticks and can be restored without resetting the map. Layer choices last until the client is reloaded.
+
+## Live sensor controls
+
+The **Sensor controls** panel offers sliders and exact numeric inputs for sample interval, joint latitude/longitude position jitter radius, reported accuracy baseline, accuracy jitter, speed noise, heading jitter, sample timing jitter, and maximum send delay. Move controls to stage a draft, then click **Apply settings** to update the running simulator without restarting. **Discard edits** restores current server values. No changes to arrow-key movement or its instantaneous turning behavior are included.
+
+`PATCH /api/settings` accepts a partial JSON object containing only adjustable fields and returns the full effective settings. It validates and commits the entire patch atomically; invalid requests leave settings unchanged. Successful changes broadcast `{ type: "settings", data: settings }` to all connected clients, and new clients receive the current snapshot. The UI updates prediction timing immediately for subsequent forecasts, protects newer WebSocket settings from stale fetch responses, and preserves unsaved edits to other controls when another client changes settings. Already saved predictions remain frozen.
+
+| Runtime setting | Allowed range |
+| --- | --- |
+| `sampleIntervalMs` | 20–10000 ms |
+| `positionRadiusMeters` | 0–100 m |
+| `accuracyMeters` | 0.001–100 m |
+| `accuracyJitterMeters` | 0–100 m, strictly less than `accuracyMeters` |
+| `speedMaxMetersPerSecond` | 0–20 m/s |
+| `headingJitterDegrees` | 0–180° |
+| `sampleJitterMs` | 0–1000 ms |
+| `sendDelayMaxMs` | 0–1000 ms |
+
+The minimum interval (`sampleIntervalMs - sampleJitterMs`) must be at least 1 ms and exceed the maximum send delay. Timing jitter affects actual scheduling; timestamps continue reflecting real sample/send times. IDs are not adjustable. Both position coordinates use a shared disk radius, with longitude scaled for latitude.
+
+Applying settings restarts the sampling countdown while preserving motion, the random-generator state, and sequence IDs. Any already-generated delayed reading is delivered before the faster cadence begins, preserving send order. That in-flight reading retains its original noise values. A cadence change can leave prior forecasts without a matching target time; their saved models are not rewritten. Changes are shared across clients, remain in server memory, and revert to startup configuration on restart. Runtime limits are deliberately narrower than some startup limits and are shared by API and form validation in `shared/settingsControls.ts`.

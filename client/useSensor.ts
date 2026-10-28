@@ -1,3 +1,4 @@
+import type { SettingsPatch } from '../shared/settingsControls';
 import { appendReading, emptyReadingHistory } from './readingHistory';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
@@ -7,6 +8,8 @@ export function useSensor() {
   const [connection, setConnection] = useState('Connecting');
   const [settings, setSettings] = useState<SensorSettings | null>(null);
   const [settingsError, setSettingsError] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsUpdateError, setSettingsUpdateError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [readings, setReadings] = useState(emptyReadingHistory);
@@ -15,27 +18,53 @@ export function useSensor() {
   const [streamError, setStreamError] = useState('');
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const settingsGeneration = useRef(0);
   const request = useRef<AbortController | null>(null);
+
+  const acceptSettings = useCallback((next: SensorSettings) => {
+    settingsRef.current = next;
+    setSettings(next);
+    setSettingsError('');
+    setUpdatedAt(new Date().toISOString());
+  }, []);
 
   const refresh = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    const generation = settingsGeneration.current;
     setRefreshing(true);
     try {
       const response = await fetch('/api/settings', { signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error(`Settings request failed (${response.status})`);
       const data = await response.json() as SensorSettings;
-      if (controller.signal.aborted) return;
-      setSettings(data);
-      setSettingsError('');
-      setUpdatedAt(new Date().toISOString());
+      if (controller.signal.aborted || generation !== settingsGeneration.current) return;
+      acceptSettings(data);
     } catch (error) {
       if (!controller.signal.aborted) setSettingsError(error instanceof Error ? error.message : 'Unable to load settings');
     } finally {
       if (!controller.signal.aborted) setRefreshing(false);
     }
-  }, []);
+  }, [acceptSettings]);
+
+  const updateSettings = useCallback(async (patch: SettingsPatch) => {
+    setSavingSettings(true);
+    setSettingsUpdateError('');
+    const generation = settingsGeneration.current;
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch), signal: AbortSignal.timeout(5000),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? `Settings update failed (${response.status})`);
+      if (settingsGeneration.current === generation) acceptSettings(body as SensorSettings);
+      return true;
+    } catch (error) {
+      setSettingsUpdateError(error instanceof Error ? error.message : 'Settings update failed');
+      return false;
+    } finally { setSavingSettings(false); }
+  }, [acceptSettings]);
 
   useEffect(() => {
     let disposed = false;
@@ -57,6 +86,12 @@ export function useSensor() {
         if (disposed) return;
         try {
           const message = JSON.parse(event.data) as ServerMessage;
+          if (message.type === 'settings') {
+            settingsGeneration.current++;
+            request.current?.abort();
+            setRefreshing(false);
+            acceptSettings(message.data);
+          }
           if (message.type === 'motion') setMotion({ state: message.data, receivedAt: performance.now() });
           if (message.type === 'measurement') {
             setReadings((previous) => appendReading(previous, message.data, settingsRef.current));
@@ -82,7 +117,7 @@ export function useSensor() {
       socket.close();
       request.current?.abort();
     };
-  }, [refresh]);
+  }, [refresh, acceptSettings]);
 
-  return { predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }
