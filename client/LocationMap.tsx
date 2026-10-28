@@ -27,6 +27,7 @@ export function LocationMap({ pairs, connected, motion, prediction }: LocationMa
   const snapshot = useRef(motion);
   snapshot.current = motion;
   const controls = useMapMovement(container, connected);
+  const [visible, setVisible] = useState({ avatar: true, raw: true, weighted: true, band: true, prediction: true });
   const [tileError, setTileError] = useState(false);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function LocationMap({ pairs, connected, motion, prediction }: LocationMa
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).on('tileerror', () => setTileError(true)).addTo(instance);
       marker.current = L.circleMarker(point, {
-        radius: 5, color: '#ffffff', weight: 3, fillColor: '#497da8', fillOpacity: 1,
+        className: 'raw-map-point', radius: 5, color: '#ffffff', weight: 3, fillColor: '#497da8', fillOpacity: 1,
       }).addTo(instance);
       marker.current.bindTooltip('Latest raw sensor sample');
     } else {
@@ -69,7 +70,7 @@ export function LocationMap({ pairs, connected, motion, prediction }: LocationMa
     trail.current?.clearLayers();
     const band = pairs[0]?.band;
     let removeVisibilityRing = () => {};
-    if (band) {
+    if (band && visible.band) {
       L.circle(point, {
         radius: band.radiusMeters, color: '#8063a5', fillColor: '#a994c4',
         fillOpacity: 0.14, weight: 2, className: 'accuracy-map-band',
@@ -90,47 +91,52 @@ export function LocationMap({ pairs, connected, motion, prediction }: LocationMa
       instance.on('zoomend', updateVisibility);
       removeVisibilityRing = () => instance.off('zoomend', updateVisibility);
     }
-    const chronological = [...history].sort((a, b) => Date.parse(a.timeAtSample) - Date.parse(b.timeAtSample));
-    L.polyline(chronological.map((sample) => [sample.latitude, sample.longitude] as L.LatLngTuple), {
-      color: '#4b83b3', weight: 2, opacity: 0.55, interactive: false,
-    }).addTo(trail.current!);
-    for (const sample of history.slice(1)) {
-      const label = document.createElement('span');
-      label.textContent = `Raw sample #${sample.sequentialId} · ${sample.timeAtSample} · ${sample.latitude}, ${sample.longitude}`;
-      L.circleMarker([sample.latitude, sample.longitude], {
-        radius: 3, color: '#497da8', weight: 1, fillOpacity: 0.65,
-      }).bindTooltip(label).addTo(trail.current!);
+    if (visible.raw) {
+      const chronological = [...history].sort((a, b) => Date.parse(a.timeAtSample) - Date.parse(b.timeAtSample));
+      L.polyline(chronological.map((sample) => [sample.latitude, sample.longitude] as L.LatLngTuple), {
+        color: '#4b83b3', weight: 2, opacity: 0.55, interactive: false,
+      }).addTo(trail.current!);
+      for (const sample of history.slice(1)) {
+        const label = document.createElement('span');
+        label.textContent = `Raw sample #${sample.sequentialId} · ${sample.timeAtSample} · ${sample.latitude}, ${sample.longitude}`;
+        L.circleMarker([sample.latitude, sample.longitude], {
+          className: 'raw-map-point', radius: 3, color: '#497da8', weight: 1, fillOpacity: 0.65,
+        }).bindTooltip(label).addTo(trail.current!);
+      }
     }
-    const weighted = [...pairs].reverse().flatMap((pair) => pair.weighted ? [{ raw: pair.raw, estimate: pair.weighted }] : []);
-    L.polyline(weighted.map(({ estimate }) => [estimate.latitude, estimate.longitude] as L.LatLngTuple), {
-      color: '#dc781c', weight: 2, opacity: 0.75, dashArray: '5 4', interactive: false,
-    }).addTo(trail.current!);
-    for (const { raw, estimate } of weighted) {
-      const label = document.createElement('span');
-      label.textContent = `Weighted paired with raw #${raw.sequentialId} · window end ${estimate.timeAtSample} · ${estimate.sources.length} samples · ${estimate.latitude}, ${estimate.longitude}`;
-      L.circleMarker([estimate.latitude, estimate.longitude], {
-        radius: raw.uniqueId === measurement.uniqueId ? 7 : 4,
-        color: '#dc781c', weight: 2, fillColor: '#f6a24c', fillOpacity: 0.35,
-        className: 'weighted-map-point',
-      }).bindTooltip(label).addTo(trail.current!);
+    if (visible.weighted) {
+      const weighted = [...pairs].reverse().flatMap((pair) => pair.weighted ? [{ raw: pair.raw, estimate: pair.weighted }] : []);
+      L.polyline(weighted.map(({ estimate }) => [estimate.latitude, estimate.longitude] as L.LatLngTuple), {
+        color: '#dc781c', weight: 2, opacity: 0.75, dashArray: '5 4', interactive: false,
+      }).addTo(trail.current!);
+      for (const { raw, estimate } of weighted) {
+        const label = document.createElement('span');
+        label.textContent = `Weighted paired with raw #${raw.sequentialId} · window end ${estimate.timeAtSample} · ${estimate.sources.length} samples · ${estimate.latitude}, ${estimate.longitude}`;
+        L.circleMarker([estimate.latitude, estimate.longitude], {
+          radius: raw.uniqueId === measurement.uniqueId ? 7 : 4,
+          color: '#dc781c', weight: 2, fillColor: '#f6a24c', fillOpacity: 0.35,
+          className: 'weighted-map-point',
+        }).bindTooltip(label).addTo(trail.current!);
+      }
     }
-    marker.current.bringToFront();
+    if (visible.raw) { marker.current.addTo(instance); marker.current.bringToFront(); }
+    else marker.current.remove();
     return removeVisibilityRing;
-  }, [measurement, history, pairs]);
+  }, [measurement, history, pairs, visible.raw, visible.weighted, visible.band]);
 
   useEffect(() => {
     const layer = predictionLayer.current;
     if (!layer) return;
     layer.clearLayers();
-    if (!prediction) return;
+    if (!prediction || !visible.prediction) return;
     const point: L.LatLngTuple = [prediction.latitude, prediction.longitude];
     const label = `Saved next-reading forecast · ${prediction.targetTime} · radius ${prediction.radiusMeters.toFixed(3)} m`;
     L.circle(point, { radius: prediction.radiusMeters, color: '#168a99', fillColor: '#59b7c3', fillOpacity: 0.12, dashArray: '7 5', weight: 2, className: 'prediction-map-area' }).bindTooltip(label).addTo(layer);
     L.circleMarker(point, { radius: 5, color: '#168a99', fillColor: '#ffffff', fillOpacity: 1, weight: 2, className: 'prediction-map-point' }).bindTooltip(label).addTo(layer);
-  }, [prediction]);
+  }, [prediction, visible.prediction]);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || !visible.avatar) return;
     const body = document.createElement('div');
     body.className = 'avatar-body';
     const arrow = document.createElement('span');
@@ -164,7 +170,7 @@ export function LocationMap({ pairs, connected, motion, prediction }: LocationMa
       avatar.current?.remove();
       avatar.current = null;
     };
-  }, [connected]);
+  }, [connected, visible.avatar]);
 
   return <section className="panel location-panel">
     <div className="panel-head">
@@ -184,6 +190,19 @@ export function LocationMap({ pairs, connected, motion, prediction }: LocationMa
     {controls.error && <p className="notice" role="alert">{controls.error}</p>}
     <p id="map-controls" className="map-instructions">Click the map or Tab to focus it, then hold ↑ ↓ ← → to move. Release to stop. {controls.moving ? 'Movement command active.' : 'Arrow keys move the sensor, not the map.'}</p>
     <div ref={container} tabIndex={0} className="location-map" role="region" aria-label="OpenStreetMap showing the sensor location" aria-describedby="map-controls" />
-    <p className="footnote">Green avatar and arrow: live simulator position and direction, animated independently of sensor sampling. Blue dots and solid line: raw readings. Orange dots and dashed line: saved weighted estimates. Both retain the latest 50 pairs. Purple circle: estimated accuracy band at true meter scale. When it is too small to see, a dashed 12-pixel ring marks it for visibility only; use the numeric radius for its actual size. Teal point and dashed area: saved next-reading forecast, at true meter scale. Drag to pan; use + / − to zoom.</p>
+    <div className="map-legend" role="group" aria-label="Map layers">
+      {([
+        { key: 'avatar', label: 'Live avatar', color: '#176c57', shape: 'dot' },
+        { key: 'raw', label: 'Raw readings', color: '#497da8', shape: 'solid' },
+        { key: 'weighted', label: 'Weighted readings', color: '#dc781c', shape: 'dashed' },
+        { key: 'band', label: 'Accuracy band', color: '#8063a5', shape: 'area' },
+        { key: 'prediction', label: 'Prediction', color: '#168a99', shape: 'area' },
+      ] as const).map(({ key, label, color, shape }) => <button
+        key={key} type="button" aria-pressed={visible[key]} title={`${visible[key] ? 'Hide' : 'Show'} ${label.toLowerCase()}`}
+        onClick={() => setVisible((previous) => ({ ...previous, [key]: !previous[key] }))}
+        className={`legend-toggle ${visible[key] ? '' : 'layer-hidden'}`}
+      ><span className={`legend-swatch swatch-${shape}`} style={{ color }} aria-hidden="true" />{label}<span className="legend-state" aria-hidden="true">{visible[key] ? '✓' : '−'}</span></button>)}
+    </div>
+    <p className="footnote">Click a key to show or hide its layer. Histories retain 50 pairs. The accuracy band's small dashed visibility ring is not to scale; numeric radii show actual sizes. Drag to pan; use + / − to zoom.</p>
   </section>;
 }

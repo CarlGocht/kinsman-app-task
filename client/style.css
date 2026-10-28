@@ -259,3 +259,14 @@ tbody th { font-weight: 500; background: transparent; }
 
 .prediction-summary { margin-bottom: 22px; border-left: 4px solid #168a99; }
 .prediction-result { font-size: 13px; color: #276673; }
+
+.map-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.legend-toggle { display: inline-flex; align-items: center; gap: 8px; background: white; border-color: #cbd9d0; color: #193238; min-height: 38px; }
+.legend-toggle.layer-hidden { background: #f2f3f1; color: #78847f; border-style: dashed; }
+.legend-toggle.layer-hidden .legend-swatch { opacity: 0.35; }
+.legend-state { margin-left: 3px; color: #71847c; font-size: 12px; }
+.legend-swatch { display: inline-block; flex: 0 0 20px; width: 20px; height: 12px; }
+.swatch-dot { flex-basis: 12px; width: 12px; border-radius: 50%; background: currentColor; }
+.swatch-solid { height: 0; border-top: 3px solid currentColor; }
+.swatch-dashed { height: 0; border-top: 3px dashed currentColor; }
+.swatch-area { border: 2px dashed currentColor; border-radius: 50%; background: color-mix(in srgb, currentColor 15%, transparent); }
