@@ -32,6 +32,14 @@ export function App() {
       <section><p className="label">REPORTED SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Reported speed with measurement jitter</small></section>
     </div>
     <SettingsControls settings={sensor.settings} connected={sensor.connection === 'Connected'} saving={sensor.savingSettings} error={sensor.settingsUpdateError} onApply={sensor.updateSettings} />
+    <section className="panel fault-controls" aria-label="Fault injection">
+      <div className="panel-head"><div><p className="eyebrow">ONE-SHOT TEST</p><h2>Bad position data</h2></div>
+        <button type="button" disabled={sensor.connection !== 'Connected' || !sensor.faultState || sensor.triggeringFault || sensor.faultState.pending} onClick={() => void sensor.triggerBadDataFault()}>{sensor.triggeringFault ? 'Queuing…' : sensor.faultState?.pending ? `Queued for #${sensor.faultState.targetSequentialId}` : 'Inject 50 m position jump'}</button>
+      </div>
+      <p className="footnote">Offsets the next newly generated reading 50 meters east. The real position, avatar, reported accuracy, and velocity stay unchanged; subsequent readings return to normal.</p>
+      <p role="status" className="footnote">{sensor.faultState?.pending ? `Fault queued for sample #${sensor.faultState.targetSequentialId}.` : sensor.faultState?.lastInjected ? `Applied to sample #${sensor.faultState.lastInjected.sequentialId} at ${sensor.faultState.lastInjected.timeAtSample}.` : 'No fault queued.'}{sensor.connection !== 'Connected' ? ' Disconnected; showing last known injector status.' : ''}</p>
+      {sensor.faultError && <p className="notice" role="alert">{sensor.faultError}</p>}
+    </section>
     {band && <section className="panel accuracy-summary" aria-label="Current accuracy band">
       <div className="panel-head"><div><p className="eyebrow">ACCURACY ESTIMATE · RAW #{latest.sequentialId}</p><h2>Estimated band radius: {band.radiusMeters.toFixed(3)} m</h2></div><span className="tag">{band.comparedSamples ? `${band.comparedSamples} prior samples` : 'Sensor only'}</span></div>
       <p className="footnote">Reported accuracy: {band.reportedAccuracyMeters.toFixed(3)} m · History disagreement: {band.disagreementMeters === null ? 'collecting history' : `${band.disagreementMeters.toFixed(3)} m`} · History spread: {band.historySpreadMeters === null ? '—' : `${band.historySpreadMeters.toFixed(3)} m`}</p>

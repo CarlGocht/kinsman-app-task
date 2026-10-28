@@ -1,5 +1,6 @@
+import { destination } from '../shared/geo.js';
 import { Motion } from './motion.js';
-import type { MovementCommand } from '../shared/protocol.js';
+import type { FaultState, MovementCommand } from '../shared/protocol.js';
 import { randomUUID } from 'node:crypto';
 import type { Measurement, SensorSettings } from '../shared/protocol.js';
 
@@ -15,6 +16,8 @@ export function seededRandom(seed: number): () => number {
 }
 
 export class Simulator {
+  private faultPending = false;
+  private lastInjected: FaultState['lastInjected'] = null;
   private random: () => number;
   private motion: Motion;
   private sequence = 0;
@@ -22,7 +25,7 @@ export class Simulator {
   private running = false;
   private sampleTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingSendUntil = 0;
-  constructor(private settings: Readonly<SensorSettings>, private emit: (measurement: Measurement) => void) {
+  constructor(private settings: Readonly<SensorSettings>, private emit: (measurement: Measurement) => void, private onFaultChange: (state: FaultState) => void = () => {}) {
     this.random = seededRandom(settings.seed);
     this.motion = new Motion(settings);
   }
@@ -57,6 +60,12 @@ export class Simulator {
           headingDegrees: (motion.headingDegrees + (this.random() * 2 - 1) * s.headingJitterDegrees + 360) % 360,
         },
       };
+      if (this.faultPending) {
+        Object.assign(measurement, destination(measurement.latitude, measurement.longitude, 90, 50));
+        this.faultPending = false;
+        this.lastInjected = { uniqueId: measurement.uniqueId, sequentialId: measurement.sequentialId, timeAtSample };
+        this.onFaultChange(this.getFaultState());
+      }
       const delay = this.random() * s.sendDelayMaxMs;
       this.pendingSendUntil = performance.now() + delay;
       this.later(() => {
@@ -66,6 +75,17 @@ export class Simulator {
       }, delay);
       this.schedule();
     }, waitMs + interval);
+  }
+  getFaultState(): FaultState {
+    return { pending: this.faultPending, targetSequentialId: this.faultPending ? this.sequence + 1 : null,
+      offsetMeters: 50, headingDegrees: 90, lastInjected: this.lastInjected };
+  }
+  triggerBadDataFault(): FaultState {
+    // A single pending slot makes repeat clicks/requests idempotent until consumed.
+    this.faultPending = true;
+    const state = this.getFaultState();
+    this.onFaultChange(state);
+    return state;
   }
   updateSettings(settings: Readonly<SensorSettings>) {
     const timingChanged = this.settings.sampleIntervalMs !== settings.sampleIntervalMs
@@ -89,6 +109,7 @@ export class Simulator {
   }
   stop() {
     this.running = false;
+    this.faultPending = false;
     this.motion.set({ north: 0, east: 0 });
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();

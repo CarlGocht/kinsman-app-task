@@ -16,6 +16,17 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Content-Type', 'application/json');
     if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
+    if (request.url === '/api/faults/bad-data') {
+      if (request.method === 'GET') { response.end(JSON.stringify(simulator.getFaultState())); return; }
+      if (request.method === 'POST') {
+        request.resume();
+        response.end(JSON.stringify(simulator.triggerBadDataFault()));
+        return;
+      }
+      response.writeHead(405, { Allow: 'GET, POST' });
+      response.end(JSON.stringify({ error: 'Method not allowed' }));
+      return;
+    }
     if (request.url === '/api/movement') {
       if (request.method === 'GET') { response.end(JSON.stringify(simulator.getMovement())); return; }
       if (request.method !== 'POST') {
@@ -63,8 +74,9 @@ export function createApp(input: Partial<SensorSettings> = {}) {
     status();
     broadcast({ type: 'motion', data: simulator.getMovement() });
     client.send(JSON.stringify({ type: 'settings', data: settings } satisfies ServerMessage));
+    client.send(JSON.stringify({ type: 'faults', data: simulator.getFaultState() } satisfies ServerMessage));
   });
-  const simulator = new Simulator(settings, (data) => broadcast({ type: 'measurement', data }));
+  const simulator = new Simulator(settings, (data) => broadcast({ type: 'measurement', data }), (data) => broadcast({ type: 'faults', data }));
   let motionTimer: ReturnType<typeof setInterval> | undefined;
   let closing: Promise<void> | undefined;
   return {

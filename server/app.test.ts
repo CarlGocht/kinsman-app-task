@@ -1,3 +1,4 @@
+import { distanceMeters } from '../shared/geo.js';
 import { once } from 'node:events';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -162,6 +163,32 @@ describe('local API', () => {
     expect((await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(1025) })).status).toBe(413);
     expect(peer.messages.filter((message) => message.type === 'settings')).toEqual([{ type: 'settings', data: original }]);
     expect(await (await fetch(url)).json()).toEqual(original);
+  });
+  it('arms and consumes a one-shot position fault across all connected clients', async () => {
+    const app = createApp({ seed: 42, sampleIntervalMs: 300, sampleJitterMs: 0, sendDelayMaxMs: 0, positionRadiusMeters: 0 });
+    apps.push(app);
+    const port = await app.listen(0);
+    const first = await connect(port), second = await connect(port);
+    const url = `http://127.0.0.1:${port}/api/faults/bad-data`;
+    expect(await (await fetch(url)).json()).toMatchObject({ pending: false, lastInjected: null });
+    const armedResponse = await fetch(url, { method: 'POST' });
+    expect(armedResponse.status).toBe(200);
+    const armed = await armedResponse.json();
+    expect(armed).toMatchObject({ pending: true, offsetMeters: 50, headingDegrees: 90 });
+    const [samples, peerSamples] = await Promise.all([waitForMeasurements(first.client, 2), waitForMeasurements(second.client, 2)]);
+    expect(samples).toEqual(peerSamples);
+    const injected = samples.find((sample) => sample.sequentialId === armed.targetSequentialId)!;
+    expect(injected).toBeDefined();
+    expect(distanceMeters(app.settings, injected)).toBeCloseTo(50, 5);
+    const normal = samples.find((sample) => sample.sequentialId > armed.targetSequentialId)!;
+    expect(distanceMeters(app.settings, normal)).toBeLessThan(1e-6);
+    const final = await (await fetch(url)).json();
+    expect(final).toMatchObject({ pending: false, lastInjected: { uniqueId: injected.uniqueId, sequentialId: injected.sequentialId } });
+    for (const peer of [first, second]) {
+      expect(peer.messages).toContainEqual({ type: 'faults', data: armed });
+      expect(peer.messages).toContainEqual({ type: 'faults', data: final });
+    }
+    expect((await fetch(url, { method: 'DELETE' })).status).toBe(405);
   });
   it('rejects WebSocket upgrades outside /ws', async () => {
     const { port } = await setup();

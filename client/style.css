@@ -283,3 +283,6 @@ tbody th { font-weight: 500; background: transparent; }
 .settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 13px; color: #286443; }
 .settings-actions button[type=submit] { background: #193b40; color: white; }
 @media(max-width:650px) { .settings-grid { grid-template-columns: 1fr; } }
+
+.fault-controls { margin-bottom: 22px; border-left: 4px solid #ba642e; }
+.fault-controls button { border-color: #d5ac8a; color: #8a4814; background: #fff4e8; }

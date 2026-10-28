@@ -11,7 +11,7 @@ A local location-sensor simulator with a Node.js/TypeScript server and a React/T
 - Run the server in a terminal and the client as a webpage on localhost.
 - Keep recent history in memory.
 
-Deployment setup, fault injection, and fault detection are deferred until the healthy stream and client/server setup work.
+Deployment setup and automatic fault classification remain deferred. A one-shot bad-position injector is available for exercising the stream and prediction checks.
 
 ## Components
 
@@ -56,7 +56,7 @@ Initial defaults (configurable):
 
 Record `timeAtSample` and `timeAtSend` from the actual clock at measurement generation and transmission. Timing jitter comes from scheduling, rather than altering timestamps; send time must not precede sample time. Operating-system scheduling may add extra delay beyond the configured jitter.
 
-Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Noise levels can be adjusted at runtime; explicit fault injection and detection remain future work.
+Sample noise once per measurement and broadcast that measurement to all clients. Validate configuration so intervals remain positive, accuracy stays positive, and timing settings cannot overlap successive sampling cycles. Noise levels can be adjusted at runtime; a one-shot position fault is available; additional fault scenarios and automatic classification remain future work.
 
 ## Server tests
 
@@ -74,7 +74,7 @@ Tests cover:
 - **Avatar timing:** independent motion streaming with a slow sample interval, frame projection between readings, stopped states, and lease-limited extrapolation.
 - **Lifecycle:** clean shutdown closes connections and stops sampling timers.
 
-These tests cover normal server behavior only; sensor fault injection and detection remain deferred.
+Tests cover normal behavior and the one-shot position injector; broader fault detection remains future work.
 
 ## Measurement format
 
@@ -280,3 +280,15 @@ Applying timing settings restarts the sampling countdown while preserving motion
 **History weighting window** in Sensor controls sets the lookback from 0.5 to 30 seconds (default 3). Apply it like the other settings; it syncs across clients and affects weighting, historical accuracy comparison, and trajectory fits on subsequent readings. Each weighted snapshot and forecast records its actual window length, so historical labels remain correct after changes. Existing saved estimates, bands, forecasts, and evaluations are not rewritten.
 
 The client retains up to 30 seconds of raw sample-time data independently of the selected lookback and 50 displayed pairs. Increasing the window can immediately draw on that retained data at the next reading; data from before connection cannot be recovered. Shrinking it excludes older points from new estimates while keeping the retention buffer available for later expansion. The gentle recency half-life remains 3 seconds, independently of lookback length. Changing only history or noise settings preserves sampling cadence; timing controls reschedule it. `HISTORY_WINDOW_SECONDS` sets the startup default.
+
+## One-shot bad-position fault
+
+Click **Inject 50 m position jump** to offset the next newly generated sensor reading 50 meters east. The offset is applied after normal measurement jitter. True motion and the live avatar are unchanged; IDs, timestamps, velocity, and reported accuracy retain their normal behavior. Subsequent readings return to normal without a compensating change to ground truth or random-noise state.
+
+- `POST /api/faults/bad-data` queues the fixed fault (no request body). There is one pending slot; repeated requests while pending do not stack multiple faults.
+- `GET /api/faults/bad-data` returns pending status, target sequence ID, fixed distance/bearing, and the last injected sample's ID/time.
+- A separate `faults` WebSocket message synchronizes injector status to clients. Sensor measurements carry no injected-fault flag, and the estimator/predictor receives no injector metadata.
+
+The button is disabled while queued or disconnected. Status identifies the generated sample that received the fault; with send delay enabled it may still be in transit. A measurement already generated before the click is not modified—the fault targets the following generation. Changing settings preserves a pending fault; server shutdown clears it.
+
+The existing saved-prediction comparison can show the shifted reading outside its previously saved area. This does not yet add a fault classifier or outlier rejection: weighted history and subsequent forecasts will temporarily incorporate the bad sample, which is useful for the next detection work.

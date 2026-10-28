@@ -1,9 +1,13 @@
 import type { SettingsPatch } from '../shared/settingsControls';
 import { appendReading, emptyReadingHistory } from './readingHistory';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
+import type { FaultState, MovementState, SensorSettings, ServerMessage } from '../shared/protocol';
 
 export function useSensor() {
+  const [faultState, setFaultState] = useState<FaultState | null>(null);
+  const [triggeringFault, setTriggeringFault] = useState(false);
+  const [faultError, setFaultError] = useState('');
+  const faultGeneration = useRef(0);
   const [motion, setMotion] = useState<{ state: MovementState; receivedAt: number } | null>(null);
   const [connection, setConnection] = useState('Connecting');
   const [settings, setSettings] = useState<SensorSettings | null>(null);
@@ -66,6 +70,18 @@ export function useSensor() {
     } finally { setSavingSettings(false); }
   }, [acceptSettings]);
 
+  const triggerBadDataFault = useCallback(async () => {
+    setTriggeringFault(true); setFaultError('');
+    const generation = faultGeneration.current;
+    try {
+      const response = await fetch('/api/faults/bad-data', { method: 'POST', signal: AbortSignal.timeout(5000) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? 'Unable to trigger fault');
+      if (faultGeneration.current === generation) setFaultState(body as FaultState);
+    } catch (error) { setFaultError(error instanceof Error ? error.message : 'Unable to trigger fault'); }
+    finally { setTriggeringFault(false); }
+  }, []);
+
   useEffect(() => {
     let disposed = false;
     let socket: WebSocket;
@@ -79,6 +95,8 @@ export function useSensor() {
         setConnection('Connected');
         setStreamError('');
         setMotion(null);
+        setFaultState(null);
+        setFaultError('');
         setReadings(emptyReadingHistory()); // A server restart can reset sequence IDs; start a fresh connection history.
         void refresh();
       };
@@ -86,6 +104,10 @@ export function useSensor() {
         if (disposed) return;
         try {
           const message = JSON.parse(event.data) as ServerMessage;
+          if (message.type === 'faults') {
+            faultGeneration.current++;
+            setFaultState(message.data);
+          }
           if (message.type === 'settings') {
             settingsGeneration.current++;
             request.current?.abort();
@@ -119,5 +141,5 @@ export function useSensor() {
     };
   }, [refresh, acceptSettings]);
 
-  return { updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
+  return { faultState, triggeringFault, faultError, triggerBadDataFault, updateSettings, savingSettings, settingsUpdateError, predictions: readings.predictions, pairs: readings.pairs, motion, connection, settings, settingsError, refreshing, updatedAt, history, clients, streamError, refresh };
 }
