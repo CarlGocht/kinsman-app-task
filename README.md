@@ -27,7 +27,7 @@ Send sensor measurements from the server to the client. Keep sensor messages sep
 
 Use React and TypeScript to display connection status, current coordinates, velocity, accuracy, timestamps, identifiers, and recent sample history.
 
-## Planned API and settings
+## API and settings
 
 - **WebSocket `/ws`:** stream sensor measurements and separate simulation status messages to connected clients.
 - **HTTP `GET /api/settings`:** return the effective settings currently used by the running simulator, so the client can display them for debugging.
@@ -74,9 +74,9 @@ Initial tests will cover:
 
 These tests cover normal server behavior only; sensor fault injection and detection remain deferred.
 
-## Planned measurement format
+## Measurement format
 
-The following is the planned data contract, not an implemented API:
+Measurements use the following shared TypeScript contract (`shared/protocol.ts`):
 
 ```ts
 {
@@ -124,7 +124,67 @@ git clone https://github.com/CarlGocht/kinsman-app-task.git kinsman-app
 cd kinsman-app
 ```
 
-Application installation, development, and testing commands will be documented as implementation begins. No application code has been added yet.
+The server is implemented; the React client remains planned. Use Node.js 22.12 or newer.
+
+```sh
+npm ci
+npm run dev
+```
+
+The server binds to `127.0.0.1:3001`. Stop it with Ctrl+C. It samples continuously while running, including when no clients are connected; a new connection receives future samples, without replaying history.
+
+```sh
+curl http://127.0.0.1:3001/api/settings
+```
+
+To inspect the stream, open a browser's developer console:
+
+```js
+const sensor = new WebSocket('ws://127.0.0.1:3001/ws');
+sensor.onmessage = (event) => console.log(JSON.parse(event.data));
+// When finished:
+// sensor.close();
+```
+
+WebSocket messages are JSON envelopes: `{ type: "measurement", data: measurement }` or `{ type: "status", data: { simulation: "running", connectedClients: 1 } }`. Status messages are sent on connection and disconnection. The API is read-only and requires no client commands. The settings endpoint permits cross-origin browser reads for the future local React client.
+
+### Startup configuration
+
+Set environment variables before starting the server; `.env` files are not loaded automatically. All effective sensor settings, including the generated or supplied seed, are returned by `GET /api/settings`.
+
+```sh
+SAMPLE_INTERVAL_MS=250 SEED=42 npm run dev
+```
+
+| Environment variable | Default |
+| --- | --- |
+| `PORT` | `3001` (`0` chooses an available port) |
+| `SENSOR_ID` | `sensor-1` |
+| `SEED` | Random unsigned 32-bit integer |
+| `LATITUDE` | `40.7128` |
+| `LONGITUDE` | `-74.006` |
+| `SAMPLE_INTERVAL_MS` | `1000` |
+| `SAMPLE_JITTER_MS` | `10` |
+| `SEND_DELAY_MAX_MS` | `5` |
+| `POSITION_RADIUS_METERS` | `0.01` |
+| `ACCURACY_METERS` | `0.02` |
+| `ACCURACY_JITTER_METERS` | `0.005` |
+| `SPEED_MAX_METERS_PER_SECOND` | `0.005` |
+| `HEADING_JITTER_DEGREES` | `2` |
+
+Invalid configuration fails at startup with an error. Timing settings must leave at least one millisecond between samples and keep the maximum send delay below the minimum sample interval. Accuracy must remain positive. The local coordinate approximation supports base latitudes strictly between -89 and 89 degrees and position radii up to 1000 meters; longitudes wrap at the date line. Heading jitter is limited to 180 degrees. Reproducing a seed reproduces noise and requested delays, but real clock timestamps and UUIDs differ between runs.
+
+### Checks and compiled execution
+
+```sh
+npm test                 # Unit tests and local HTTP/WebSocket integration tests
+npm run test:watch       # Watch tests during development
+npm run typecheck        # Check application and test types
+npm run build            # Compile server and shared types into dist/
+npm start                # Run the compiled server
+```
+
+SIGINT and SIGTERM stop sampling and close active connections. Slow WebSocket consumers exceeding a 1 MiB send buffer are disconnected to bound memory use.
 
 ## Development
 
