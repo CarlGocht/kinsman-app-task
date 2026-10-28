@@ -286,3 +286,13 @@ tbody th { font-weight: 500; background: transparent; }
 
 .fault-controls { margin-bottom: 22px; border-left: 4px solid #ba642e; }
 .fault-controls button { border-color: #d5ac8a; color: #8a4814; background: #fff4e8; }
+
+.map-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; margin-bottom: 22px; }
+.map-workspace .location-panel, .map-workspace .fault-controls { margin-bottom: 0; }
+.map-workspace .fault-controls { position: sticky; top: 20px; }
+.map-workspace .fault-controls .panel-head { flex-direction: column; align-items: stretch; gap: 18px; }
+.map-workspace .fault-controls button { width: 100%; }
+@media(max-width:1000px) {
+  .map-workspace { grid-template-columns: minmax(0, 1fr); }
+  .map-workspace .fault-controls { position: static; }
+}
