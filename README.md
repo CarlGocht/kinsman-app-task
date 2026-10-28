@@ -124,12 +124,22 @@ git clone https://github.com/CarlGocht/kinsman-app-task.git kinsman-app
 cd kinsman-app
 ```
 
-The server is implemented; the React client remains planned. Use Node.js 22.12 or newer.
+The server and basic React client are implemented. Use Node.js 22.12 or newer.
 
 ```sh
 npm ci
 npm run dev
 ```
+
+In a second terminal, start the browser client:
+
+```sh
+npm run dev:client
+```
+
+Open [the sensor monitor](http://127.0.0.1:5173/). It displays all effective settings, the latest full measurement payload, and a rolling table of the most recent 50 samples. Settings load initially and whenever the stream reconnects; use **Refresh settings** to fetch them manually. The client automatically retries disconnected streams every two seconds and starts a fresh history after reconnecting. Last received data remains visible while disconnected.
+
+The Vite development server proxies `/api` and `/ws` to the sensor server. If you change its port, set the proxy target when starting the client, for example `SENSOR_SERVER_URL=http://127.0.0.1:4001 npm run dev:client`. The client runs locally without a deployment setup.
 
 The server binds to `127.0.0.1:3001`. Stop it with Ctrl+C. It samples continuously while running, including when no clients are connected; a new connection receives future samples, without replaying history.
 
@@ -179,12 +189,14 @@ Invalid configuration fails at startup with an error. Timing settings must leave
 ```sh
 npm test                 # Unit tests and local HTTP/WebSocket integration tests
 npm run test:watch       # Watch tests during development
-npm run typecheck        # Check application and test types
-npm run build            # Compile server and shared types into dist/
+npm run typecheck        # Check server, client, shared, and test types
+npm run build            # Build server, shared types, and browser client into dist/
+npm run build:server     # Compile only the server
+npm run build:client     # Bundle only the browser client into dist/client/
 npm start                # Run the compiled server
 ```
 
-SIGINT and SIGTERM stop sampling and close active connections. Slow WebSocket consumers exceeding a 1 MiB send buffer are disconnected to bound memory use.
+`npm start` runs the compiled sensor server; use `npm run dev:client` to serve the local browser UI. SIGINT and SIGTERM stop sampling and close active connections. Slow WebSocket consumers exceeding a 1 MiB send buffer are disconnected to bound memory use.
 
 ## Development
 
