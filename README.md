@@ -223,3 +223,11 @@ Keep secrets in local environment files, which are ignored by Git.
 ## Velocity interpretation
 
 The server always reports numeric raw speed and heading. Stationary speed retains small noise; stationary heading retains the last direction (initially north) with jitter and has no meaningful travel interpretation. The live avatar arrow uses simulation movement direction and disappears when ground truth stops; the raw payload and table continue showing noisy sensor readings unchanged. A future model may derive speed and heading noise from east/north velocity components.
+
+## Client weighted position
+
+The comparison table highlights one current **Weighted** position above the unchanged raw measurements. It uses the latest three received samples from the current connection, or the available one/two while warming up. The source sequence IDs and normalized weight percentages are shown with the window end timestamp. Reconnection resets the window along with raw history.
+
+Weights are inverse-square reported accuracy: `w = 1 / accuracyMeters²`, normalized to sum to one. Thus 1 cm accuracy has four times the influence of 2 cm accuracy. The client averages local latitude/longitude offsets, handling longitude wrap at the date line. This is a local position smoother; it does not extrapolate old positions forward during motion. The live ground-truth avatar and raw map markers remain separate from this table estimate.
+
+The weighted row's **model accuracy** is `sqrt(1 / sum(1 / accuracyMeters²))`. It assumes independent errors about the same true position and treats reported accuracy as an uncertainty scale. The simulator does not guarantee that statistical model, and movement can introduce lag, so this value is not a guarantee of actual accuracy. Speed and heading are not fused and are shown as dashes in the weighted row. Invalid/nonpositive accuracies or invalid coordinates within the window make the estimate unavailable rather than producing invalid arithmetic.

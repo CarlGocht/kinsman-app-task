@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+import { weightedPosition } from './weightedPosition';
 import { useSensor } from './useSensor';
 import { LocationMap } from './LocationMap';
 
@@ -12,6 +14,7 @@ const labels: Record<string, string> = {
 export function App() {
   const sensor = useSensor();
   const latest = sensor.history[0];
+  const weighted = useMemo(() => weightedPosition(sensor.history), [sensor.history]);
   return <main>
     <header>
       <div><p className="eyebrow">KINSMAN / LOCAL SIMULATOR</p><h1>Sensor monitor</h1><p className="subtitle">One simulated sensor. A live view of every measurement.</p></div>
@@ -39,8 +42,24 @@ export function App() {
     </div>
     <section className="panel history">
       <div className="panel-head"><div><p className="eyebrow">LIVE STREAM</p><h2>Recent measurements</h2></div><span className="tag">{sensor.history.length} / 50</span></div>
-      <p className="footnote">Newest first. Keeps the latest 50 samples for this connection.</p>
-      {sensor.history.length ? <div className="table-scroll"><table><thead><tr><th>Sequence</th><th>Sample time (UTC)</th><th>Latitude (°)</th><th>Longitude (°)</th><th>Accuracy (m)</th><th>Speed (m/s)</th><th>Heading (°)</th></tr></thead><tbody>{sensor.history.map((m) => <tr key={m.uniqueId}><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>)}</tbody></table></div> : <p className="empty">Measurements will appear here once the server starts streaming.</p>}
+      <p className="footnote">Newest first. The highlighted row estimates location from the latest three received samples (smaller accuracyMeters means higher weight). Raw readings remain unchanged.</p>
+      {weighted && <p className="footnote" aria-label="Weighted position sources">
+        Window: {weighted.sources.length}/3 samples · {weighted.sources.map((source) => `#${source.sequentialId}: ${(source.weight * 100).toFixed(1)}%`).join(' · ')}.
+        {' '}Weighted accuracy uses an independent, same-position error model; it is not guaranteed actual accuracy. While moving, the estimate can lag behind the latest raw position.
+      </p>}
+      {sensor.history.length ? <div className="table-scroll"><table>
+        <thead><tr><th>Source</th><th>Sequence / window</th><th>Sample / window end (UTC)</th><th>Latitude (°)</th><th>Longitude (°)</th><th>Accuracy (m)</th><th>Speed (m/s)</th><th>Heading (°)</th></tr></thead>
+        <tbody>
+          {weighted && <tr className="weighted-row" aria-label="Current weighted position">
+            <th scope="row">Weighted ({weighted.sources.length}/3)</th>
+            <td>{weighted.sources.map((source) => `#${source.sequentialId}`).join(', ')}</td>
+            <td>{weighted.timeAtSample}</td><td>{weighted.latitude.toFixed(9)}</td><td>{weighted.longitude.toFixed(9)}</td>
+            <td title="Model-based combined accuracy; assumes independent errors at one position">{weighted.accuracyMeters.toFixed(4)} (model)</td>
+            <td>—</td><td>—</td>
+          </tr>}
+          {sensor.history.map((m) => <tr key={m.uniqueId}><th scope="row">Raw</th><td>#{m.sequentialId}</td><td>{m.timeAtSample}</td><td>{m.latitude.toFixed(9)}</td><td>{m.longitude.toFixed(9)}</td><td>{m.accuracyMeters.toFixed(4)}</td><td>{m.velocityData.speedMetersPerSecond.toFixed(4)}</td><td>{m.velocityData.headingDegrees.toFixed(2)}</td></tr>)}
+        </tbody>
+      </table></div> : <p className="empty">Measurements will appear here once the server starts streaming.</p>}
     </section>
     <footer>Local sensor monitor <span>HTTP settings · WebSocket measurements</span></footer>
   </main>;
