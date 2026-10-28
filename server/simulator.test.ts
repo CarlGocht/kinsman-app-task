@@ -69,6 +69,24 @@ describe('stationary simulator', () => {
     vi.advanceTimersByTime(1000);
     expect(measurements).toHaveLength(count);
   });
+  it('reports movement speed, heading and location from ground truth at sample time', () => {
+    vi.useFakeTimers();
+    const samples: Measurement[] = [];
+    const settings = createSettings({ seed: 42, sampleIntervalMs: 100, sampleJitterMs: 0, sendDelayMaxMs: 0, positionRadiusMeters: 0, speedMaxMetersPerSecond: 0, headingJitterDegrees: 0 });
+    const simulator = new Simulator(settings, (sample) => samples.push(sample));
+    simulator.start(); simulator.setMovement({ north: 0, east: 1 });
+    vi.advanceTimersByTime(501);
+    expect(samples).toHaveLength(5);
+    for (const sample of samples) {
+      expect(sample.velocityData).toEqual({ speedMetersPerSecond: 5, headingDegrees: 90 });
+      expect(sample.longitude).toBeGreaterThan(settings.longitude);
+    }
+    expect(samples[4].longitude).toBeGreaterThan(samples[0].longitude);
+    simulator.setMovement({ north: 0, east: 0 });
+    vi.advanceTimersByTime(101);
+    expect(samples.at(-1)!.velocityData).toEqual({ speedMetersPerSecond: 0, headingDegrees: 90 });
+    simulator.stop();
+  });
   it('clears a pending send on shutdown', () => {
     vi.useFakeTimers();
     const emit = vi.fn();

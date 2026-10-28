@@ -222,3 +222,28 @@ pre {
   font-size:11px}
 }
 
+
+.location-panel {
+  margin-bottom: 22px;
+}
+.location-map {
+  height: 520px;
+  width: 100%;
+  border-radius: 7px;
+  border: 1px solid #dce3dd;
+  background: #edf1ed;
+  z-index: 0;
+}
+.location-map .leaflet-control-attribution {
+  font-size: 11px;
+}
+@media (max-width: 520px) {
+  .location-map { height: 440px; }
+}
+
+.location-map:focus-visible { outline: 3px solid #348656; outline-offset: 3px; }
+.map-instructions { font-size: 13px; line-height: 1.6; color: #35594d; }
+ .avatar-icon { background: transparent; border: none; }
+.avatar-body { width: 40px; height: 40px; position: relative; transform-origin: center; }
+.avatar-dot { position: absolute; left: 12px; top: 12px; width: 16px; height: 16px; border: 3px solid white; border-radius: 50%; background: #176c57; box-shadow: 0 1px 3px #19323855; }
+.avatar-arrow { position: absolute; left: 8px; top: -7px; width: 24px; text-align: center; font-size: 23px; color: #124f40; text-shadow: 0 0 3px white; line-height: 24px; }

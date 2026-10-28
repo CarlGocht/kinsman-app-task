@@ -1,10 +1,12 @@
 import { useSensor } from './useSensor';
+import { LocationMap } from './LocationMap';
 
 const labels: Record<string, string> = {
   sensorId: 'Sensor ID', seed: 'Random seed', latitude: 'Base latitude (°)', longitude: 'Base longitude (°)',
   sampleIntervalMs: 'Sample interval (ms)', sampleJitterMs: 'Sample jitter (±ms)', sendDelayMaxMs: 'Max send delay (ms)',
   positionRadiusMeters: 'Position radius (m)', accuracyMeters: 'Nominal accuracy (m)', accuracyJitterMeters: 'Accuracy jitter (±m)',
-  speedMaxMetersPerSecond: 'Max apparent speed (m/s)', headingJitterDegrees: 'Heading jitter (±°)',
+  speedMaxMetersPerSecond: 'Speed noise limit (m/s)', headingJitterDegrees: 'Heading jitter (±°)',
+  movementSpeedMetersPerSecond: 'Movement speed (m/s)', movementTimeoutMs: 'Movement timeout (ms)',
 };
 
 export function App() {
@@ -12,15 +14,16 @@ export function App() {
   const latest = sensor.history[0];
   return <main>
     <header>
-      <div><p className="eyebrow">KINSMAN / LOCAL SIMULATOR</p><h1>Sensor monitor</h1><p className="subtitle">One stationary sensor. A live view of every measurement.</p></div>
+      <div><p className="eyebrow">KINSMAN / LOCAL SIMULATOR</p><h1>Sensor monitor</h1><p className="subtitle">One simulated sensor. A live view of every measurement.</p></div>
       <div className={`connection ${sensor.connection === 'Connected' ? 'online' : ''}`} role="status"><span className="dot" />{sensor.connection}</div>
     </header>
     {sensor.streamError && <p className="notice" role="alert">{sensor.streamError} Reconnects automatically every 2 seconds.</p>}
     <div className="metrics">
       <section><p className="label">LATEST SAMPLE</p><strong>{latest ? `#${latest.sequentialId}` : '—'}</strong><small>{sensor.clients === null ? 'Waiting for connection' : `${sensor.clients} connected client${sensor.clients === 1 ? '' : 's'}`}</small></section>
       <section><p className="label">REPORTED ACCURACY</p><strong>{latest ? `${(latest.accuracyMeters * 100).toFixed(2)} cm` : '—'}</strong><small>Centimeter-scale measurement</small></section>
-      <section><p className="label">APPARENT SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Stationary sensor with small jitter</small></section>
+      <section><p className="label">REPORTED SPEED</p><strong>{latest ? `${latest.velocityData.speedMetersPerSecond.toFixed(4)} m/s` : '—'}</strong><small>Reported speed with measurement jitter</small></section>
     </div>
+    <LocationMap motion={sensor.motion} history={sensor.history} connected={sensor.connection === 'Connected'} />
     <div className="columns">
       <section className="panel">
         <div className="panel-head"><div><p className="eyebrow">CONFIGURATION</p><h2>Current settings</h2></div><button onClick={() => void sensor.refresh()} disabled={sensor.refreshing}>{sensor.refreshing ? 'Refreshing…' : 'Refresh settings'}</button></div>
